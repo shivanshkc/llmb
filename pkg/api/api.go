@@ -81,7 +81,7 @@ func (c *Client) ChatCompletionStream(ctx context.Context, prompt string) (<-cha
 		defer func() { _ = response.Body.Close() }()
 
 		for sse := range sseChan {
-			event := ChatCompletionEvent{Received: sse.Timestamp}
+			event := ChatCompletionEvent{Index: sse.Index, Received: sse.Timestamp}
 
 			if sse.Error != nil {
 				event.Error = fmt.Errorf("failed to read server-sent event: %w", sse.Error)

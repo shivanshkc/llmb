@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"text/tabwriter"
 
 	"github.com/shivanshkc/llmb/pkg/api"
+	"github.com/shivanshkc/llmb/pkg/bench"
 )
 
 // Input errors.
@@ -26,21 +28,47 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Do something with the flags.
+	// Create the API client for the LLM API.
 	client := api.NewClient("http://localhost:8080")
-	stream, err := client.ChatCompletionStream(context.Background(), *prompt)
+	//printStream(client.ChatCompletionStream(context.Background(), *prompt))
+	//return
+
+	// Benchmark-able function.
+	streamFunc := func() (<-chan api.ChatCompletionEvent, error) {
+		return client.ChatCompletionStream(context.Background(), *prompt)
+	}
+
+	// Run benchmarks.
+	resp, err := bench.BenchmarkStream(*total, *concurrency, streamFunc)
 	if err != nil {
 		fmt.Println("ERROR:", err.Error())
 		os.Exit(1)
 	}
 
-	for event := range stream {
-		if event.Error != nil {
-			fmt.Printf("<error>%s</error>", event.Error.Error())
-			continue
-		}
-		fmt.Print(event.Choices[0].Delta.Content)
-	}
+	// Tab writer for clean output.
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+
+	fmt.Fprintln(w, "--------------------------")
+	// Write some data to the Writer.
+	fmt.Fprintln(w, "Metric\tAvg\tMin\tMed\tMax\tP90\tP95")
+
+	fmt.Fprintf(w, "TFTT\t%v\t%v\t%v\t%v\t%v\t%v\n",
+		resp.TTFT.Average(), resp.TTFT.Minimum(),
+		resp.TTFT.Median(), resp.TTFT.Maximum(),
+		resp.TTFT.Percentile(90), resp.TTFT.Percentile(95))
+
+	fmt.Fprintf(w, "TBT\t%v\t%v\t%v\t%v\t%v\t%v\n",
+		resp.TBT.Average(), resp.TBT.Minimum(),
+		resp.TBT.Median(), resp.TBT.Maximum(),
+		resp.TBT.Percentile(90), resp.TBT.Percentile(95))
+
+	fmt.Fprintf(w, "TT\t%v\t%v\t%v\t%v\t%v\t%v\n",
+		resp.TT.Average(), resp.TT.Minimum(),
+		resp.TT.Median(), resp.TT.Maximum(),
+		resp.TT.Percentile(90), resp.TT.Percentile(95))
+
+	// Flush the Writer to ensure all data is written to the output.
+	w.Flush()
 }
 
 // defineAndParseFlags defines all flags required by the tool,
@@ -71,4 +99,20 @@ func validateFlags(total, concurrency *int, prompt *string) error {
 	}
 
 	return nil
+}
+
+// printStream prints the given stream to stdout.
+func printStream(stream <-chan api.ChatCompletionEvent, err error) {
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	for event := range stream {
+		if event.Error != nil {
+			fmt.Printf("<error>%s</error>", event.Error.Error())
+			continue
+		}
+		fmt.Print(event.Choices[0].Delta.Content)
+	}
 }

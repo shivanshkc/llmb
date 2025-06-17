@@ -13,6 +13,8 @@ type ChatCompletionEvent struct {
 	SystemFingerprint string `json:"system_fingerprint"`
 	Object            string `json:"object"`
 
+	// Index can be used to process events in the correct order.
+	Index int `json:"-"`
 	// Received is the local timestamp of event reception.
 	// It is not received from the API.
 	Received time.Time `json:"-"`

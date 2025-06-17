@@ -75,7 +75,7 @@ func ReadServerSentEvents(responseBody io.Reader) (<-chan ServerSentEvent, error
 		// Events will be read line by line.
 		reader := bufio.NewReader(responseBody)
 
-		for {
+		for index := 0; true; index++ {
 			value, err := reader.ReadString('\n')
 			// Record reception timestamp as quickly as possible.
 			timestamp := time.Now()
@@ -87,13 +87,13 @@ func ReadServerSentEvents(responseBody io.Reader) (<-chan ServerSentEvent, error
 
 			wg.Add(1)
 			// Goroutine because this operation should not block the loop.
-			go func(value string, err error, timestamp time.Time) {
+			go func(index int, value string, err error, timestamp time.Time) {
 				defer wg.Done()
-				parsed := parseServerSentEvent(value, err, timestamp)
+				parsed := parseServerSentEvent(index, value, err, timestamp)
 				if parsed.Error != nil || parsed.Value != nil {
 					eventChan <- parsed
 				}
-			}(value, err, timestamp)
+			}(index, value, err, timestamp)
 		}
 	}()
 
@@ -102,6 +102,7 @@ func ReadServerSentEvents(responseBody io.Reader) (<-chan ServerSentEvent, error
 
 // ServerSentEvent represents a single event sent by the server.
 type ServerSentEvent struct {
+	Index     int
 	Value     []byte
 	Error     error
 	Timestamp time.Time
@@ -112,8 +113,8 @@ type ServerSentEvent struct {
 // It has two key behaviours:
 //  1. If the provided error is not nil, the value is ignored.
 //  2. If the value has a "data: " prefix, it is trimmed.
-func parseServerSentEvent(value string, err error, timestamp time.Time) ServerSentEvent {
-	event := ServerSentEvent{Timestamp: timestamp}
+func parseServerSentEvent(index int, value string, err error, timestamp time.Time) ServerSentEvent {
+	event := ServerSentEvent{Index: index, Timestamp: timestamp}
 	if err != nil {
 		event.Error = fmt.Errorf("failed to read event: %w", err)
 		return event
