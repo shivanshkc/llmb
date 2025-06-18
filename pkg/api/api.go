@@ -74,30 +74,33 @@ func (c *Client) ChatCompletionStream(ctx context.Context, prompt string) (<-cha
 	}
 
 	// Channel to which the stream will be piped.
-	eventChan := make(chan ChatCompletionEvent, 1)
+	eventChan := make(chan ChatCompletionEvent, 100)
 	// Process events without blocking.
 	go func() {
 		defer close(eventChan)
 		defer func() { _ = response.Body.Close() }()
 
 		for sse := range sseChan {
-			event := ChatCompletionEvent{Index: sse.Index, Received: sse.Timestamp}
-
-			if sse.Error != nil {
-				event.Error = fmt.Errorf("failed to read server-sent event: %w", sse.Error)
-				eventChan <- event
-				continue
-			}
-
-			if err := json.Unmarshal(sse.Value, &event); err != nil {
-				event.Error = fmt.Errorf("failed to unmarshal server-sent event: %w", err)
-				eventChan <- event
-				continue
-			}
-
-			eventChan <- event
+			eventChan <- convertSSE(sse)
 		}
 	}()
 
 	return eventChan, nil
+}
+
+// convertSSE converts the given Server-Sent Event to a ChatCompletionEvent type.
+func convertSSE(sse httputils.ServerSentEvent) ChatCompletionEvent {
+	event := ChatCompletionEvent{Index: sse.Index, Received: sse.Timestamp}
+
+	if sse.Error != nil {
+		event.Error = fmt.Errorf("failed to read server-sent event: %w", sse.Error)
+		return event
+	}
+
+	if err := json.Unmarshal([]byte(sse.Value), &event); err != nil {
+		event.Error = fmt.Errorf("failed to unmarshal server-sent event: %w", err)
+		return event
+	}
+
+	return event
 }
