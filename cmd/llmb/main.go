@@ -21,7 +21,7 @@ var (
 
 func main() {
 	// Inputs.
-	total, concurrency, prompt := defineAndParseFlags()
+	total, concurrency, prompt, debug := defineAndParseFlags()
 	if err := validateFlags(total, concurrency, prompt); err != nil {
 		fmt.Println("ERROR:", err.Error())
 		flag.Usage()
@@ -30,8 +30,10 @@ func main() {
 
 	// Create the API client for the LLM API.
 	client := api.NewClient("http://localhost:8080")
-	//printStream(client.ChatCompletionStream(context.Background(), *prompt))
-	//return
+	if *debug {
+		printStream(client.ChatCompletionStream(context.Background(), *prompt))
+		return
+	}
 
 	// Benchmark-able function.
 	streamFunc := func() (<-chan api.ChatCompletionEvent, error) {
@@ -73,14 +75,15 @@ func main() {
 
 // defineAndParseFlags defines all flags required by the tool,
 // calls flag.Parse and returns the flag variable pointers.
-func defineAndParseFlags() (*int, *int, *string) {
+func defineAndParseFlags() (*int, *int, *string, *bool) {
 	// Flag definitions.
 	total := flag.Int("t", 1, "Total number of requests (must be > 0)")
 	concurrency := flag.Int("c", 1, "Number of concurrent requests (must be > 0)")
 	prompt := flag.String("p", "", "The prompt string (must not be empty)")
+	debug := flag.Bool("d", false, "Enable debug mode")
 
 	flag.Parse()
-	return total, concurrency, prompt
+	return total, concurrency, prompt, debug
 }
 
 // validateFlags ...
