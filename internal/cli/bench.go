@@ -19,13 +19,15 @@ var benchCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(benchCmd)
 
-	// Here you will define your flags and configuration settings.
+	benchCmd.Flags().StringP("base-url", "u",
+		"http://localhost:8080", "Base URL of the API.")
 
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// benchCmd.PersistentFlags().String("foo", "", "A help for foo")
+	benchCmd.Flags().StringP("prompt", "p",
+		"", "Prompt to use.")
 
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// benchCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	benchCmd.Flags().IntP("request-count", "n",
+		12, "Number of requests to perform.")
+
+	benchCmd.Flags().IntP("concurrency", "c",
+		3, "Number of multiple requests to make at a time.")
 }
