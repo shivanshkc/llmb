@@ -3,45 +3,30 @@ package bench
 import (
 	"sort"
 	"time"
-
-	"github.com/shivanshkc/llmb/pkg/api"
 )
 
-// timeToFirstToken calculates the "Time to First Token" metric for all the given event lists.
-func timeToFirstToken(events [][]api.ChatCompletionEvent, times [][2]time.Time) []time.Duration {
-	// List of all TTFT.
-	ttft := make([]time.Duration, len(events))
-	for i, eventList := range events {
-		// Only concerned with the first event.
-		if len(eventList) != 0 {
-			ttft[i] = eventList[0].Timestamp().Sub(times[i][0])
-		}
-	}
-	return ttft
+// Metrics ...
+type Metrics struct {
+	Avg, Min, Med, Max, P90, P95 time.Duration
 }
 
-func timeBetweenTokens(events [][]api.ChatCompletionEvent, times [][2]time.Time) []time.Duration {
-	var durations []time.Duration
-	for _, eventList := range events {
-		for i := 0; i < len(eventList)-1; i++ {
-			durations = append(durations, eventList[i+1].Timestamp().Sub(eventList[i].Timestamp()))
-		}
-	}
-	return durations
-}
+// durations represents the time taken by each instance of a repeating process.
+type durations []time.Duration
 
-func totalTime(times [][2]time.Time) []time.Duration {
-	var totalDurations []time.Duration
-	for _, t := range times {
-		totalDurations = append(totalDurations, t[1].Sub(t[0]))
+// Metrics calculates and returns all the metrics for the given set of durations.
+func (ds durations) Metrics() Metrics {
+	return Metrics{
+		Avg: ds.Average(),
+		Min: ds.Minimum(),
+		Med: ds.Median(),
+		Max: ds.Maximum(),
+		P90: ds.Percentile(90),
+		P95: ds.Percentile(95),
 	}
-	return totalDurations
 }
-
-type Durations []time.Duration
 
 // Average calculates the mean of a slice of time.Duration values.
-func (ds Durations) Average() time.Duration {
+func (ds durations) Average() time.Duration {
 	if len(ds) == 0 {
 		return 0
 	}
@@ -54,7 +39,7 @@ func (ds Durations) Average() time.Duration {
 }
 
 // Minimum finds the smallest time.Duration in the slice.
-func (ds Durations) Minimum() time.Duration {
+func (ds durations) Minimum() time.Duration {
 	if len(ds) == 0 {
 		return 0
 	}
@@ -69,7 +54,7 @@ func (ds Durations) Minimum() time.Duration {
 }
 
 // Median finds the middle value of a sorted slice of time.Duration.
-func (ds Durations) Median() time.Duration {
+func (ds durations) Median() time.Duration {
 	if len(ds) == 0 {
 		return 0
 	}
@@ -86,7 +71,7 @@ func (ds Durations) Median() time.Duration {
 }
 
 // Maximum finds the largest time.Duration in the slice.
-func (ds Durations) Maximum() time.Duration {
+func (ds durations) Maximum() time.Duration {
 	if len(ds) == 0 {
 		return 0
 	}
@@ -102,7 +87,7 @@ func (ds Durations) Maximum() time.Duration {
 
 // Percentile calculates the Pxx value for a slice of time.Duration.
 // Given percentile should be between 0 and 100.
-func (ds Durations) Percentile(percentile float64) time.Duration {
+func (ds durations) Percentile(percentile float64) time.Duration {
 	if len(ds) == 0 || percentile < 0 || percentile > 100 {
 		return 0
 	}

@@ -92,7 +92,7 @@ func ReadServerSentEvents(responseBody io.Reader) (<-chan ServerSentEvent, error
 			wg.Add(1)
 			go func(sse ServerSentEvent) {
 				defer wg.Done()
-				go sanitizeAndPushSSE(sse, eventChan)
+				sanitizeAndPushSSE(sse, eventChan)
 			}(sse)
 		}
 	}()
