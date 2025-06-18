@@ -14,7 +14,7 @@ func timeToFirstToken(events [][]api.ChatCompletionEvent, times [][2]time.Time) 
 	for i, eventList := range events {
 		// Only concerned with the first event.
 		if len(eventList) != 0 {
-			ttft[i] = eventList[0].Received.Sub(times[i][0])
+			ttft[i] = eventList[0].Timestamp().Sub(times[i][0])
 		}
 	}
 	return ttft
@@ -24,7 +24,7 @@ func timeBetweenTokens(events [][]api.ChatCompletionEvent, times [][2]time.Time)
 	var durations []time.Duration
 	for _, eventList := range events {
 		for i := 0; i < len(eventList)-1; i++ {
-			durations = append(durations, eventList[i+1].Received.Sub(eventList[i].Received))
+			durations = append(durations, eventList[i+1].Timestamp().Sub(eventList[i].Timestamp()))
 		}
 	}
 	return durations

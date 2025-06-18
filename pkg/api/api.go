@@ -90,15 +90,15 @@ func (c *Client) ChatCompletionStream(ctx context.Context, prompt string) (<-cha
 
 // convertSSE converts the given Server-Sent Event to a ChatCompletionEvent type.
 func convertSSE(sse httputils.ServerSentEvent) ChatCompletionEvent {
-	event := ChatCompletionEvent{Index: sse.Index, Received: sse.Timestamp}
+	event := ChatCompletionEvent{index: sse.Index, timestamp: sse.Timestamp}
 
 	if sse.Error != nil {
-		event.Error = fmt.Errorf("failed to read server-sent event: %w", sse.Error)
+		event.err = fmt.Errorf("failed to read server-sent event: %w", sse.Error)
 		return event
 	}
 
 	if err := json.Unmarshal([]byte(sse.Value), &event); err != nil {
-		event.Error = fmt.Errorf("failed to unmarshal server-sent event: %w", err)
+		event.err = fmt.Errorf("failed to unmarshal server-sent event: %w", err)
 		return event
 	}
 

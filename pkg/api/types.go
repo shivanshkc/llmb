@@ -4,6 +4,7 @@ import (
 	"time"
 )
 
+// ChatCompletionEvent represents a single event from the Chat-Completion API response stream.
 type ChatCompletionEvent struct {
 	Choices []ChatCompletionChoice `json:"choices"`
 
@@ -13,14 +14,17 @@ type ChatCompletionEvent struct {
 	SystemFingerprint string `json:"system_fingerprint"`
 	Object            string `json:"object"`
 
-	// Index can be used to process events in the correct order.
-	Index int `json:"-"`
-	// Received is the local timestamp of event reception.
+	// index can be used to process events in the correct order.
+	index int
+	// timestamp is the local timestamp of event reception.
 	// It is not received from the API.
-	Received time.Time `json:"-"`
+	timestamp time.Time
 	// Error in processing the event.
-	Error error `json:"-"`
+	err error
 }
+
+func (cce ChatCompletionEvent) Index() int           { return cce.index }
+func (cce ChatCompletionEvent) Timestamp() time.Time { return cce.timestamp }
 
 type ChatCompletionChoice struct {
 	Delta ChatCompletionDelta `json:"delta"`

@@ -33,7 +33,7 @@ func (s StreamFunc) execute() ([]api.ChatCompletionEvent, error) {
 		events = append(events, event)
 	}
 
-	sort.SliceStable(events, func(i, j int) bool { return events[i].Index < events[j].Index })
+	sort.SliceStable(events, func(i, j int) bool { return events[i].Index() < events[j].Index() })
 	return events, nil
 }
 
