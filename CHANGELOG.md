@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/shivanshkc/llmb/compare/v1.0.0...v1.1.0) (2025-06-19)
+
+
+### Features
+
+* **core:** add model flag to all commands ([b2996a5](https://github.com/shivanshkc/llmb/commit/b2996a5d044b015a852ced1801923f4252e78a2d))
+
 # 1.0.0 (2025-06-19)
 
 
