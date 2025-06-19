@@ -16,7 +16,7 @@ comparing models, or just having a conversation, LLMB has you covered.
 
 ```bash
 # Install from source
-go install github.com/shivanshkc/llmb@latest
+go install github.com/shivanshkc/llmb/cmd/llmb@latest
 ```
 
 ## Usage
