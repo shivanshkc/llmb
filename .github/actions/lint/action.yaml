@@ -1,0 +1,20 @@
+name: Lint
+description: Checks if the Go code is linted correctly.
+
+runs:
+  using: composite
+  steps:
+    # Setting up Go.
+    - name: Setting up Go.
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.23
+        cache: 'false'
+
+    # Running golangci-lint.
+    - name: Running golangci-lint.
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+        # No automatic fixes in the pipeline.
+        args: --fix=false --timeout 5m
