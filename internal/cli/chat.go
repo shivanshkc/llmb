@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -38,6 +37,13 @@ var chatCmd = &cobra.Command{
 		reader := bufio.NewReader(os.Stdin)
 
 		for {
+			// Respect context expiry.
+			select {
+			case <-cmd.Context().Done():
+				return
+			default:
+			}
+
 			// Prompt user for input.
 			fmt.Print(text.FgBlue.Sprint("You: "))
 
@@ -57,7 +63,7 @@ var chatCmd = &cobra.Command{
 			chatMessages = append(chatMessages, api.ChatMessage{Role: role, Content: message})
 
 			// Start LLM response stream.
-			eventChan, err := client.ChatCompletionStream(context.TODO(), *chatModel, chatMessages)
+			eventChan, err := client.ChatCompletionStream(cmd.Context(), *chatModel, chatMessages)
 			if err != nil {
 				fmt.Println("Error streaming response:", err)
 				continue

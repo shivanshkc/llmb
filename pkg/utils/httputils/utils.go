@@ -2,6 +2,7 @@ package httputils
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -66,7 +67,7 @@ type ServerSentEvent struct {
 // and returns a channel for the caller to consume the events.
 //
 // The channel is automatically closed after all events have been published.
-func ReadServerSentEvents(responseBody io.Reader) (<-chan ServerSentEvent, error) {
+func ReadServerSentEvents(ctx context.Context, responseBody io.Reader) (<-chan ServerSentEvent, error) {
 	// Channel to return.
 	eventChan := make(chan ServerSentEvent, 100)
 
@@ -80,12 +81,19 @@ func ReadServerSentEvents(responseBody io.Reader) (<-chan ServerSentEvent, error
 		reader := bufio.NewReader(responseBody)
 
 		for index := 0; true; index++ {
+			// Respect context expiry.
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			value, err := reader.ReadString('\n')
 			// Record timestamp even before checking the error.
 			sse := ServerSentEvent{Index: index, Value: value, Error: err, Timestamp: time.Now()}
-			// Break the loop if the stream has ended.
+			// Return if the stream has ended.
 			if errors.Is(err, io.EOF) {
-				break
+				return
 			}
 
 			// Push to channel without blocking.

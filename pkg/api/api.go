@@ -82,7 +82,7 @@ func (c *Client) ChatCompletionStream(
 	}
 
 	// Start reading the events.
-	sseChan, err := httputils.ReadServerSentEvents(response.Body)
+	sseChan, err := httputils.ReadServerSentEvents(ctx, response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server events: %w", err)
 	}
