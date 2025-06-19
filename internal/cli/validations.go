@@ -16,6 +16,11 @@ func validateBenchFlags() string {
 		return "Invalid Base URL: " + err.Error()
 	}
 
+	// Model is required.
+	if *benchModel == "" {
+		return "Model is required."
+	}
+
 	// Prompt is required.
 	if *benchPrompt == "" {
 		return "A prompt is required."
@@ -44,6 +49,11 @@ func validateChatFlags() string {
 	// Must be a valid URL.
 	if _, err := url.Parse(*chatBaseURL); err != nil {
 		return "Invalid Base URL: " + err.Error()
+	}
+
+	// Model is required.
+	if *chatModel == "" {
+		return "Model is required."
 	}
 
 	return ""

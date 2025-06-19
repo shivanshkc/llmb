@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	benchBaseURL, benchPrompt           *string
-	benchRequestCount, benchConcurrency *int
+	benchBaseURL, benchModel, benchPrompt *string
+	benchRequestCount, benchConcurrency   *int
 )
 
 // benchCmd represents the bench command
@@ -38,7 +38,7 @@ var benchCmd = &cobra.Command{
 			// Single message chat.
 			messages := []api.ChatMessage{{Role: api.RoleUser, Content: *benchPrompt}}
 			// Get the stream.
-			cceChan, err := client.ChatCompletionStream(context.TODO(), messages)
+			cceChan, err := client.ChatCompletionStream(context.TODO(), *benchModel, messages)
 			if err != nil {
 				return nil, fmt.Errorf("error in ChatCompletionStream call: %w", err)
 			}
@@ -63,6 +63,9 @@ func init() {
 
 	benchBaseURL = benchCmd.Flags().StringP("base-url", "u",
 		"http://localhost:8080", "Base URL of the API.")
+
+	benchModel = benchCmd.Flags().StringP("model", "m",
+		"gpt-4.1", "Name of the model to use.")
 
 	benchPrompt = benchCmd.Flags().StringP("prompt", "p",
 		"", "Prompt to use.")

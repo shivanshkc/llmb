@@ -34,7 +34,9 @@ func NewClient(baseURL string) *Client {
 }
 
 // ChatCompletionStream is a wrapper for the /chat/completions API with stream enabled.
-func (c *Client) ChatCompletionStream(ctx context.Context, messages []ChatMessage) (<-chan ChatCompletionEvent, error) {
+func (c *Client) ChatCompletionStream(
+	ctx context.Context, model string, messages []ChatMessage,
+) (<-chan ChatCompletionEvent, error) {
 	// Form the API endpoint URL.
 	endpoint, err := url.JoinPath(c.baseURL, "v1/chat/completions")
 	if err != nil {
@@ -48,7 +50,7 @@ func (c *Client) ChatCompletionStream(ctx context.Context, messages []ChatMessag
 	}
 
 	// Server-Sent Events are enabled by "stream": true.
-	requestBody := []byte(`{ "stream": true, "messages": ` + string(messagesJSON) + ` }`)
+	requestBody := []byte(`{ "stream": true, "model": "` + model + `", "messages": ` + string(messagesJSON) + ` }`)
 	requestBodyReader := bytes.NewReader(requestBody)
 
 	// Create the HTTP request.
