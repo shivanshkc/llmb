@@ -41,20 +41,20 @@ var chatCmd = &cobra.Command{
 			// Prompt user for input.
 			fmt.Print(text.FgBlue.Sprint("You: "))
 
-			// Read user input.
-			input, err := reader.ReadString('\n')
+			// Read and parse user input.
+			role, message, err := readChatInput(reader)
 			if err != nil {
-				fmt.Println("Error reading input:", err)
-				break
+				fmt.Println("Failed to read input:", err)
+				continue
 			}
 
 			// Ignore empty inputs.
-			if input = strings.TrimSpace(input); input == "" {
+			if message == "" {
 				continue
 			}
 
 			// Update chat with the user's message.
-			chatMessages = append(chatMessages, api.ChatMessage{Role: api.RoleUser, Content: input})
+			chatMessages = append(chatMessages, api.ChatMessage{Role: role, Content: message})
 
 			// Start LLM response stream.
 			eventChan, err := client.ChatCompletionStream(context.TODO(), *chatModel, chatMessages)
@@ -94,4 +94,43 @@ func init() {
 
 	chatModel = chatCmd.Flags().StringP("model", "m",
 		"gpt-4.1", "Name of the model to use.")
+}
+
+// readChatInput reads the user's input from stdin for the chat command.
+//
+// It allows the user to assume any role, system, user or assistant.
+//
+// If the user input starts with a role and colon, like: "system: Hello" or "assistant: Hello", then the mentioned
+// role is used to communicate with the LLM. Role matching is case-insensitive.
+func readChatInput(reader *bufio.Reader) (string, string, error) {
+	// Read user input.
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return "", "", fmt.Errorf("error reading input: %w", err)
+	}
+
+	// Ignore empty inputs.
+	if input = strings.TrimSpace(input); input == "" {
+		return "", "", nil
+	}
+
+	const systemPrefix, assistantPrefix, userPrefix = api.RoleSystem + ":", api.RoleAssistant + ":", api.RoleUser + ":"
+
+	// Respect system role if provided.
+	if len(input) >= len(systemPrefix) && strings.EqualFold(input[:len(systemPrefix)], systemPrefix) {
+		return api.RoleSystem, strings.TrimSpace(input[len(systemPrefix):]), nil
+	}
+
+	// Respect assistant role if provided.
+	if len(input) >= len(assistantPrefix) && strings.EqualFold(input[:len(assistantPrefix)], assistantPrefix) {
+		return api.RoleAssistant, strings.TrimSpace(input[len(assistantPrefix):]), nil
+	}
+
+	// Respect user role if provided.
+	if len(input) >= len(userPrefix) && strings.EqualFold(input[:len(userPrefix)], userPrefix) {
+		return api.RoleUser, strings.TrimSpace(input[len(userPrefix):]), nil
+	}
+
+	// Could be unknown role or no role. Assume default role.
+	return api.RoleUser, input, nil
 }
