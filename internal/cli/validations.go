@@ -33,3 +33,18 @@ func validateBenchFlags() string {
 
 	return ""
 }
+
+// validateChatFlags validates the flags of the chat command.
+func validateChatFlags() string {
+	// Base URL is required.
+	if *chatBaseURL == "" {
+		return "Base URL is required."
+	}
+
+	// Must be a valid URL.
+	if _, err := url.Parse(*chatBaseURL); err != nil {
+		return "Invalid Base URL: " + err.Error()
+	}
+
+	return ""
+}

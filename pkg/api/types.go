@@ -4,6 +4,12 @@ import (
 	"time"
 )
 
+const (
+	RoleSystem    = "system"
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
 // ChatCompletionEvent represents a single event from the Chat-Completion API response stream.
 type ChatCompletionEvent struct {
 	Choices []ChatCompletionChoice `json:"choices"`

@@ -19,6 +19,12 @@ type Client struct {
 	httpClient *httputils.RetryClient
 }
 
+// ChatMessage represents a single message in the LLM chat.
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // NewClient returns a new Client instance.
 func NewClient(baseURL string) *Client {
 	return &Client{
@@ -28,15 +34,21 @@ func NewClient(baseURL string) *Client {
 }
 
 // ChatCompletionStream is a wrapper for the /chat/completions API with stream enabled.
-func (c *Client) ChatCompletionStream(ctx context.Context, prompt string) (<-chan ChatCompletionEvent, error) {
+func (c *Client) ChatCompletionStream(ctx context.Context, messages []ChatMessage) (<-chan ChatCompletionEvent, error) {
 	// Form the API endpoint URL.
 	endpoint, err := url.JoinPath(c.baseURL, "v1/chat/completions")
 	if err != nil {
 		return nil, fmt.Errorf("failed to form API endpoint URL: %w", err)
 	}
 
+	// Marshal messages to include in the response body.
+	messagesJSON, err := json.Marshal(messages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal messages: %w", err)
+	}
+
 	// Server-Sent Events are enabled by "stream": true.
-	requestBody := []byte(`{ "stream": true, "messages": [{ "role": "user", "content": "` + prompt + `" }] }`)
+	requestBody := []byte(`{ "stream": true, "messages": ` + string(messagesJSON) + ` }`)
 	requestBodyReader := bytes.NewReader(requestBody)
 
 	// Create the HTTP request.

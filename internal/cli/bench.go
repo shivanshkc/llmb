@@ -35,8 +35,10 @@ var benchCmd = &cobra.Command{
 
 		// Benchmark-able function.
 		streamFunc := func() (<-chan bench.Event, error) {
+			// Single message chat.
+			messages := []api.ChatMessage{{Role: api.RoleUser, Content: *benchPrompt}}
 			// Get the stream.
-			cceChan, err := client.ChatCompletionStream(context.TODO(), *benchPrompt)
+			cceChan, err := client.ChatCompletionStream(context.TODO(), messages)
 			if err != nil {
 				return nil, fmt.Errorf("error in ChatCompletionStream call: %w", err)
 			}
