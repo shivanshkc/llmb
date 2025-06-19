@@ -13,7 +13,9 @@ import (
 	"github.com/shivanshkc/llmb/pkg/api"
 )
 
-var chatBaseURL *string
+var (
+	chatBaseURL, chatModel *string
+)
 
 // chatCmd represents the chat command
 var chatCmd = &cobra.Command{
@@ -55,7 +57,7 @@ var chatCmd = &cobra.Command{
 			chatMessages = append(chatMessages, api.ChatMessage{Role: api.RoleUser, Content: input})
 
 			// Start LLM response stream.
-			eventChan, err := client.ChatCompletionStream(context.TODO(), chatMessages)
+			eventChan, err := client.ChatCompletionStream(context.TODO(), *chatModel, chatMessages)
 			if err != nil {
 				fmt.Println("Error streaming response:", err)
 				continue
@@ -89,4 +91,7 @@ func init() {
 
 	chatBaseURL = chatCmd.Flags().StringP("base-url", "u",
 		"http://localhost:8080", "Base URL of the API.")
+
+	chatModel = chatCmd.Flags().StringP("model", "m",
+		"gpt-4.1", "Name of the model to use.")
 }
