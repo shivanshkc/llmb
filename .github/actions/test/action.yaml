@@ -1,0 +1,33 @@
+name: Test
+description: Checks if the Go code passes tests with enough coverage.
+
+runs:
+  using: composite
+  steps:
+    # Setting up Go.
+    - name: Setting up Go.
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.23
+
+    # Running tests.
+    - name: Running tests.
+      run: CGO_ENABLED=1 go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      shell: bash
+
+    # Evaluating if the coverage meets minimum criteria.
+    - name: Evaluating coverage.
+      env:
+        # Minimum required coverage.
+        required: 0.0
+      run: |
+        echo "Required coverage: $required%"
+
+        actual=`go tool cover -func=coverage.out | tail -n 1 | sed -Ee 's!^[^[:digit:]]+([[:digit:]]+(\.[[:digit:]]+)?)%$!\1!'`
+
+        is_good=`echo "$actual >= $required" | bc`
+        test "$is_good" -eq 1 && echo "Sufficient coverage: $actual%" && exit 0
+
+        echo "Insufficient coverage: $actual%" >&2
+        exit 1
+      shell: bash
