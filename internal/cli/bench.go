@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"text/tabwriter"
 
+	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
 
 	"github.com/shivanshkc/llmb/pkg/api"
 	"github.com/shivanshkc/llmb/pkg/bench"
+	"github.com/shivanshkc/llmb/pkg/utils/miscutils"
 )
 
 var (
@@ -91,24 +92,33 @@ func convertEventChannel(cceChan <-chan api.ChatCompletionEvent) <-chan bench.Ev
 	return benchEventChan
 }
 
-// displayBenchmarkResults prints the given results to stdout in a human-readable format.
+// displayBenchmarkResults prints the given results in a human-readable format.
 func displayBenchmarkResults(results bench.StreamBenchmarkResults) {
-	// Tab writer for clean output.
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
 
-	fmt.Fprintln(w, "--------------------------")
-	// Write some data to the Writer.
-	fmt.Fprintln(w, "Metric\tAvg\tMin\tMed\tMax\tP90\tP95")
+	// Set style
+	t.SetStyle(table.StyleColoredDark)
+	// Header
+	t.AppendHeader(table.Row{"Metric", "Average", "Minimum", "Median", "Maximum", "P90", "P95"})
+	// Shorthand.
+	fd := miscutils.FormatDuration
 
-	fmt.Fprintf(w, "TTFT\t%v\t%v\t%v\t%v\t%v\t%v\n",
-		results.TTFT.Avg, results.TTFT.Min, results.TTFT.Med, results.TTFT.Max, results.TTFT.P90, results.TTFT.P95)
+	// Add rows
+	t.AppendRows([]table.Row{
+		{"TTFT", fd(results.TTFT.Avg), fd(results.TTFT.Min),
+			fd(results.TTFT.Med), fd(results.TTFT.Max),
+			fd(results.TTFT.P90), fd(results.TTFT.P95)},
+		{"TBT", fd(results.TBT.Avg), fd(results.TBT.Min),
+			fd(results.TBT.Med), fd(results.TBT.Max),
+			fd(results.TBT.P90), fd(results.TBT.P95)},
+		{"TT", fd(results.TT.Avg), fd(results.TT.Min),
+			fd(results.TT.Med), fd(results.TT.Max),
+			fd(results.TT.P90), fd(results.TT.P95)},
+	})
 
-	fmt.Fprintf(w, "TBT\t%v\t%v\t%v\t%v\t%v\t%v\n",
-		results.TBT.Avg, results.TBT.Min, results.TBT.Med, results.TBT.Max, results.TBT.P90, results.TBT.P95)
-
-	fmt.Fprintf(w, "TT\t%v\t%v\t%v\t%v\t%v\t%v\n",
-		results.TT.Avg, results.TT.Min, results.TT.Med, results.TT.Max, results.TT.P90, results.TT.P95)
-
-	// Flush the Writer to ensure all data is written to the output.
-	w.Flush()
+	// Render
+	fmt.Println()
+	t.Render()
+	fmt.Println()
 }
