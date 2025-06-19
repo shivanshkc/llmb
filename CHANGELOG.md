@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/shivanshkc/llmb/compare/v1.1.0...v1.2.0) (2025-06-19)
+
+
+### Features
+
+* **core:** user can assume any role ([1bdf62a](https://github.com/shivanshkc/llmb/commit/1bdf62ad0d6a32074efd993af76394f1a5477e17))
+
 # [1.1.0](https://github.com/shivanshkc/llmb/compare/v1.0.0...v1.1.0) (2025-06-19)
 
 
