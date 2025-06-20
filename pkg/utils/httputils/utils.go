@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -87,17 +86,13 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 	// which signals the context watcher goroutine to exit.
 	producerCtx, cancel := context.WithCancel(ctx)
 
-	// Use sync.Once to ensure the body is closed exactly once.
-	var closeOnce sync.Once
-	closeBody := func() { closeOnce.Do(func() { _ = body.Close() }) }
-
 	// This goroutine listens for the parent context's cancellation
 	// and closes the body to unblock the reader.
 	go func() {
 		// Producer finished or parent context was canceled.
 		<-producerCtx.Done()
 		// Force the reader to unblock.
-		closeBody()
+		_ = body.Close()
 	}()
 
 	// The producer goroutine.
