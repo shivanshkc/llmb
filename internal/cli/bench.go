@@ -10,7 +10,8 @@ import (
 
 	"github.com/shivanshkc/llmb/pkg/api"
 	"github.com/shivanshkc/llmb/pkg/bench"
-	"github.com/shivanshkc/llmb/pkg/utils/miscutils"
+	"github.com/shivanshkc/llmb/pkg/streams"
+	"github.com/shivanshkc/llmb/pkg/utils"
 )
 
 var (
@@ -34,16 +35,16 @@ var benchCmd = &cobra.Command{
 		client := api.NewClient(*benchBaseURL)
 
 		// Benchmark-able function.
-		streamFunc := func() (<-chan bench.Event, error) {
+		streamFunc := func() (streams.Stream[bench.Event], error) {
 			// Single message chat.
 			messages := []api.ChatMessage{{Role: api.RoleUser, Content: *benchPrompt}}
 			// Get the stream.
-			cceChan, err := client.ChatCompletionStream(context.TODO(), *benchModel, messages)
+			cceStream, err := client.ChatCompletionStream(context.TODO(), *benchModel, messages)
 			if err != nil {
-				return nil, fmt.Errorf("error in ChatCompletionStream call: %w", err)
+				return streams.Stream[bench.Event]{}, fmt.Errorf("error in ChatCompletionStream call: %w", err)
 			}
 			// Convert to compatible channel type and return.
-			return convertEventChannel(cceChan), nil
+			return streams.Map(cceStream, func(x api.ChatCompletionEvent) bench.Event { return x }), nil
 		}
 
 		// Run benchmark.
@@ -77,26 +78,6 @@ func init() {
 		3, "Number of multiple requests to make at a time.")
 }
 
-// convertEventChannel essentially converts "<-chan implementation" to "<-chan interface".
-//
-// While the `api.ChatCompletionEvent` type implements the `bench.Event` interface,
-// it doesn't mean that `chan api.ChatCompletionEvent` is the same as `chan bench.Event`.
-// So, this conversion has to be manual.
-func convertEventChannel(cceChan <-chan api.ChatCompletionEvent) <-chan bench.Event {
-	benchEventChan := make(chan bench.Event, 100)
-
-	// Pipe without blocking.
-	go func() {
-		// Both channels close together.
-		defer close(benchEventChan)
-		for event := range cceChan {
-			benchEventChan <- event
-		}
-	}()
-
-	return benchEventChan
-}
-
 // displayBenchmarkResults prints the given results in a human-readable format.
 func displayBenchmarkResults(results bench.StreamBenchmarkResults) {
 	t := table.NewWriter()
@@ -107,7 +88,7 @@ func displayBenchmarkResults(results bench.StreamBenchmarkResults) {
 	// Header
 	t.AppendHeader(table.Row{"Metric", "Average", "Minimum", "Median", "Maximum", "P90", "P95"})
 	// Shorthand.
-	fd := miscutils.FormatDuration
+	fd := utils.FormatDuration
 
 	// Add rows
 	t.AppendRows([]table.Row{

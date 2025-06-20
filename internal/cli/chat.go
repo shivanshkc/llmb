@@ -63,7 +63,7 @@ var chatCmd = &cobra.Command{
 			chatMessages = append(chatMessages, api.ChatMessage{Role: role, Content: message})
 
 			// Start LLM response stream.
-			eventChan, err := client.ChatCompletionStream(cmd.Context(), *chatModel, chatMessages)
+			eventStream, err := client.ChatCompletionStream(cmd.Context(), *chatModel, chatMessages)
 			if err != nil {
 				fmt.Println("Error streaming response:", err)
 				continue
@@ -74,7 +74,7 @@ var chatCmd = &cobra.Command{
 
 			var answer string
 			// Display streaming response and collect it to update chat.
-			for event := range eventChan {
+			for event := range eventStream.All {
 				for _, choice := range event.Choices {
 					if choice.Delta.Content != "" {
 						answer += choice.Delta.Content

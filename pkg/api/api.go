@@ -10,13 +10,14 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/shivanshkc/llmb/pkg/utils/httputils"
+	"github.com/shivanshkc/llmb/pkg/httpx"
+	"github.com/shivanshkc/llmb/pkg/streams"
 )
 
 // Client represents an LLM REST API client.
 type Client struct {
 	baseURL    string
-	httpClient *httputils.RetryClient
+	httpClient *httpx.RetryClient
 }
 
 // ChatMessage represents a single message in the LLM chat.
@@ -29,31 +30,34 @@ type ChatMessage struct {
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL:    baseURL,
-		httpClient: &httputils.RetryClient{Client: &http.Client{}},
+		httpClient: &httpx.RetryClient{Client: &http.Client{}},
 	}
 }
 
 // ChatCompletionStream is a wrapper for the /chat/completions API with stream enabled.
 func (c *Client) ChatCompletionStream(
 	ctx context.Context, model string, messages []ChatMessage,
-) (<-chan ChatCompletionEvent, error) {
+) (streams.Stream[ChatCompletionEvent], error) {
+	// Shorthand.
+	nilStream := streams.Stream[ChatCompletionEvent]{}
+
 	// Form the API endpoint URL.
 	endpoint, err := url.JoinPath(c.baseURL, "v1/chat/completions")
 	if err != nil {
-		return nil, fmt.Errorf("failed to form API endpoint URL: %w", err)
+		return nilStream, fmt.Errorf("failed to form API endpoint URL: %w", err)
 	}
 
 	// Create a map for marshalling. This makes the JSON formation injection-proof.
 	requestBodyMap := map[string]any{"stream": true, "model": model, "messages": messages}
 	requestBody, err := json.Marshal(requestBodyMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to form API request body: %w", err)
+		return nilStream, fmt.Errorf("failed to form API request body: %w", err)
 	}
 
 	// Create the HTTP request.
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nilStream, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	// Body is a JSON.
@@ -66,7 +70,7 @@ func (c *Client) ChatCompletionStream(
 	// Execute request with retries.
 	response, err := c.httpClient.DoRetry(request, 20, time.Millisecond*50)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
+		return nilStream, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
 
 	// In case of error, return the status code with the body.
@@ -77,27 +81,16 @@ func (c *Client) ChatCompletionStream(
 		if err != nil {
 			responseBody = []byte("failed to read response body: " + err.Error())
 		}
-		return nil, fmt.Errorf("unexpected status code: %d, body: %s", response.StatusCode, string(responseBody))
+		return nilStream, fmt.Errorf("unexpected status code: %d, body: %s", response.StatusCode, string(responseBody))
 	}
 
 	// Start reading the events.
-	sseChan := httputils.ReadServerSentEvents(ctx, response.Body)
-	// Channel to which the stream will be piped.
-	eventChan := make(chan ChatCompletionEvent, 100)
-
-	// Process events without blocking.
-	go func() {
-		defer close(eventChan)
-		for sse := range sseChan {
-			eventChan <- convertSSE(sse)
-		}
-	}()
-
-	return eventChan, nil
+	sseStream := httpx.ReadServerSentEvents(ctx, response.Body)
+	return streams.Map(sseStream, convertSSE), nil
 }
 
 // convertSSE converts the given Server-Sent Event to a ChatCompletionEvent type.
-func convertSSE(sse httputils.ServerSentEvent) ChatCompletionEvent {
+func convertSSE(sse httpx.ServerSentEvent) ChatCompletionEvent {
 	event := ChatCompletionEvent{index: sse.Index, timestamp: sse.Timestamp}
 
 	if sse.Error != nil {

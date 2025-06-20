@@ -1,4 +1,4 @@
-package miscutils
+package utils
 
 import (
 	"fmt"
