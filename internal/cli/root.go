@@ -1,6 +1,12 @@
 package cli
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +21,21 @@ var rootCmd = &cobra.Command{
 
 // Execute executes the root command.
 func Execute() error {
-	return rootCmd.Execute()
+	// Cancellable context to handle interruptions.
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+
+	// Listen to interruption signals.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	// Cancel the context upon interruption.
+	go func() {
+		<-signals
+		fmt.Println("\r- Ctrl+C pressed in Terminal")
+		cancelFunc()
+	}()
+
+	return rootCmd.ExecuteContext(ctx)
 }
 
 func init() {
