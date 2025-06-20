@@ -43,37 +43,36 @@ func (c *Client) ChatCompletionStream(
 		return nil, fmt.Errorf("failed to form API endpoint URL: %w", err)
 	}
 
-	// Marshal messages to include in the response body.
-	messagesJSON, err := json.Marshal(messages)
+	// Create a map for marshalling. This makes the JSON formation injection-proof.
+	requestBodyMap := map[string]any{"stream": true, "model": model, "messages": messages}
+	requestBody, err := json.Marshal(requestBodyMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal messages: %w", err)
+		return nil, fmt.Errorf("failed to form API request body: %w", err)
 	}
 
-	// Server-Sent Events are enabled by "stream": true.
-	requestBody := []byte(`{ "stream": true, "model": "` + model + `", "messages": ` + string(messagesJSON) + ` }`)
-	requestBodyReader := bytes.NewReader(requestBody)
-
 	// Create the HTTP request.
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, requestBodyReader)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	// Body is a JSON.
-	httpRequest.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", "application/json")
 	// Make the request retryable.
-	httpRequest.GetBody = func() (io.ReadCloser, error) {
+	request.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(requestBody)), nil
 	}
 
 	// Execute request with retries.
-	response, err := c.httpClient.DoRetry(httpRequest, 20, time.Millisecond*50)
+	response, err := c.httpClient.DoRetry(request, 20, time.Millisecond*50)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
 
 	// In case of error, return the status code with the body.
 	if response.StatusCode != http.StatusOK {
+		defer func() { _ = response.Body.Close() }()
+		// Include body in the error for debug purposes.
 		responseBody, err := io.ReadAll(response.Body)
 		if err != nil {
 			responseBody = []byte("failed to read response body: " + err.Error())
