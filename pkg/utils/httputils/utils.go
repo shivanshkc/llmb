@@ -66,62 +66,74 @@ type ServerSentEvent struct {
 // ReadServerSentEvents reads the given response body assuming it is a stream of Server-Sent events
 // and returns a channel for the caller to consume the events.
 //
-// The channel is automatically closed after all events have been published.
-func ReadServerSentEvents(ctx context.Context, responseBody io.Reader) (<-chan ServerSentEvent, error) {
-	// Channel to return.
+// It takes ownership of the response body and guarantees it will be closed.
+func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan ServerSentEvent {
 	eventChan := make(chan ServerSentEvent, 100)
 
-	// All processing happens without blocking. So, the caller gets the channel immediately.
+	// producerCtx is a local context for managing the producer's lifecycle.
+	// When the producer goroutine finishes (for any reason), it calls cancel(),
+	// which signals the context watcher goroutine to exit.
+	producerCtx, cancel := context.WithCancel(ctx)
+
+	// Use sync.Once to ensure the body is closed exactly once.
+	var closeOnce sync.Once
+	closeBody := func() { closeOnce.Do(func() { _ = body.Close() }) }
+
+	// This goroutine listens for the parent context's cancellation
+	// and closes the body to unblock the reader.
 	go func() {
-		var wg sync.WaitGroup  // Helps avoid channel write after closure.
-		defer close(eventChan) // Channel closes upon return.
-		defer wg.Wait()        // Wait for all events to get published.
+		// Producer finished or parent context was canceled.
+		<-producerCtx.Done()
+		// Force the reader to unblock.
+		closeBody()
+	}()
 
-		// Events will be read line by line.
-		reader := bufio.NewReader(responseBody)
+	// The producer goroutine.
+	// It starts a loop to read events and produces them to the returned channel.
+	go func() {
+		defer close(eventChan) // Close the returned channel once producer is done.
+		defer cancel()         // Signal all related goroutines to clean up.
 
-		for index := 0; true; index++ {
-			// Respect context expiry.
-			select {
-			case <-ctx.Done():
+		// For reading events from the body stream.
+		reader := bufio.NewReader(body)
+
+		for index := 0; ; index++ {
+			line, err := reader.ReadString('\n')
+			timestamp := time.Now() // Capture timestamp immediately after read.
+
+			if err != nil {
+				// If the error is due to context cancellation, report the context error.
+				if ctx.Err() != nil {
+					err = ctx.Err()
+				}
+				// Send the final error and exit.
+				if !errors.Is(err, io.EOF) { // Don't send EOF as a discrete error event.
+					eventChan <- ServerSentEvent{Index: index, Error: err, Timestamp: timestamp}
+				}
+				return
+			}
+
+			switch value := sanitizeSSE(line); value {
+			case "":
+				// SSE spec says to ignore empty lines.
+				continue
+			case "[DONE]":
+				// Stream signaled completion.
 				return
 			default:
+				eventChan <- ServerSentEvent{Index: index, Value: value, Timestamp: timestamp}
 			}
-
-			value, err := reader.ReadString('\n')
-			// Record timestamp even before checking the error.
-			sse := ServerSentEvent{Index: index, Value: value, Error: err, Timestamp: time.Now()}
-			// Return if the stream has ended.
-			if errors.Is(err, io.EOF) {
-				return
-			}
-
-			// Push to channel without blocking.
-			wg.Add(1)
-			go func(sse ServerSentEvent) {
-				defer wg.Done()
-				sanitizeAndPushSSE(sse, eventChan)
-			}(sse)
 		}
 	}()
 
-	return eventChan, nil
+	return eventChan
 }
 
-// sanitizeAndPushSSE sanitizes the given SSE object and, if found valid, pushes it to the given channel.
-func sanitizeAndPushSSE(sse ServerSentEvent, eventChan chan<- ServerSentEvent) {
-	// If it is an error event, no further sanitization is required.
-	if sse.Error != nil {
-		eventChan <- sse
-		return
-	}
-
-	// Sanitize the value and remove the "data:" prefix if present.
-	sse.Value = strings.TrimSpace(sse.Value)
-	sse.Value = strings.TrimSpace(strings.TrimPrefix(sse.Value, "data:"))
-	if sse.Value == "[DONE]" {
-		sse.Value = ""
-	}
-
-	eventChan <- sse
+// sanitizeSSE sanitizes the given SSE value.
+//
+// IT MUST NOT BE AN EXPENSIVE OPERATION, otherwise the arrival timestamp of the event won't be correct.
+func sanitizeSSE(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "data:")
+	return strings.TrimSpace(value)
 }

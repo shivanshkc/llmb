@@ -82,18 +82,13 @@ func (c *Client) ChatCompletionStream(
 	}
 
 	// Start reading the events.
-	sseChan, err := httputils.ReadServerSentEvents(ctx, response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read server events: %w", err)
-	}
-
+	sseChan := httputils.ReadServerSentEvents(ctx, response.Body)
 	// Channel to which the stream will be piped.
 	eventChan := make(chan ChatCompletionEvent, 100)
+
 	// Process events without blocking.
 	go func() {
 		defer close(eventChan)
-		defer func() { _ = response.Body.Close() }()
-
 		for sse := range sseChan {
 			eventChan <- convertSSE(sse)
 		}
