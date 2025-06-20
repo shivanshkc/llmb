@@ -14,45 +14,57 @@ import (
 
 // RetryClient is an extension of the standard HTTP client.
 // It provides a DoRetry method that keeps executing the given request until it succeeds.
-// Here, success does not mean a 2xx. It means that the `Do` method does not return an error.
+// Here, success means the `Do` method does not return a transient error.
 type RetryClient struct {
 	*http.Client
 }
 
-// DoRetry internally calls `net.http.Client.Do` on the given request.
-// If `Do` returns an error, the operation is retried. This method requires the request to have the GetBody method.
-func (rc *RetryClient) DoRetry(req *http.Request, retries int, delay time.Duration) (*http.Response, error) {
-	// Request should be rewindable.
+// DoRetry internally calls the `Do` method of the standard HTTP client on the given request.
+// If `Do` returns an error, the operation is retried up to maxAttempts times.
+func (rc *RetryClient) DoRetry(req *http.Request, maxAttempts int, delay time.Duration) (*http.Response, error) {
+	// Request must be rewindable for retries.
 	if req.GetBody == nil {
-		return nil, fmt.Errorf("GetBody function should be set for retrying")
+		return nil, fmt.Errorf("GetBody function must be set on the request for retrying")
 	}
 
-	// In case all retries are exhausted, this error will be returned.
+	// This will hold the error that will be returned of all retries fail.
 	var errFinal error
 
-	for i := 0; i < retries; i++ {
-		// Body needs to be reassigned upon every retry.
+	for i := 0; i < maxAttempts; i++ {
+		// Create a fresh body for this attempt.
 		bodyReader, err := req.GetBody()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get request body from GetBody: %w", err)
+			return nil, fmt.Errorf("error in the GetBody call: %w", err)
 		}
-		// Reassign body.
 		req.Body = bodyReader
 
-		// Execute request. If no error, return early.
+		// Attempt the request.
 		response, err := rc.Do(req)
 		if err == nil {
+			// Success! The caller is now responsible for closing the response body.
 			return response, nil
 		}
 
-		// Record error for returning.
+		// Record the error. If this is the final retry, this error will be returned.
 		errFinal = err
+		// Don't execute the waiting code if this is the last iteration.
+		if i == maxAttempts-1 {
+			break
+		}
 
-		// Wait before retrying.
-		time.Sleep(delay)
+		// Timer to wait before next retry.
+		timer := time.NewTimer(delay)
+		// Wait before the next retry while respecting the request's context.
+		select {
+		case <-req.Context().Done():
+			timer.Stop()                    // Cleanup the timer. `time.After` does not allow this optimization.
+			return nil, req.Context().Err() // Return the context's error.
+		case <-timer.C:
+			// Continue to the next attempt.
+		}
 	}
 
-	return nil, fmt.Errorf("retries exhausted, error: %w", errFinal)
+	return nil, fmt.Errorf("all %d attempts failed, last error: %w", maxAttempts, errFinal)
 }
 
 // ServerSentEvent represents a single event sent by the server.
