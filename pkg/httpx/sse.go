@@ -7,8 +7,6 @@ import (
 	"io"
 	"strings"
 	"time"
-
-	"github.com/shivanshkc/llmb/pkg/streams"
 )
 
 // ServerSentEvent represents a single event sent by the server.
@@ -23,7 +21,7 @@ type ServerSentEvent struct {
 // and returns a channel for the caller to consume the events.
 //
 // It takes ownership of the response body and guarantees it will be closed.
-func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) streams.Stream[ServerSentEvent] {
+func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan ServerSentEvent {
 	eventChan := make(chan ServerSentEvent, 100)
 
 	// producerCtx is a local context for managing the producer's lifecycle.
@@ -78,7 +76,7 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) streams.Strea
 		}
 	}()
 
-	return streams.New(eventChan)
+	return eventChan
 }
 
 // sanitizeSSE sanitizes the given SSE value.

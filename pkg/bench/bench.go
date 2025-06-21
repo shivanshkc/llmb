@@ -66,7 +66,7 @@ func benchmarkOneStream(sFunc StreamFunc, timingsChan chan timings, errFatalChan
 	// Time at which stream started.
 	start := time.Now()
 	// Collect all events from the stream.
-	events, err := sFunc.Consume()
+	events, err := sFunc.Collect()
 	// Time at which stream ended.
 	end := time.Now()
 

@@ -85,8 +85,8 @@ func (c *Client) ChatCompletionStream(
 	}
 
 	// Start reading the events.
-	sseStream := httpx.ReadServerSentEvents(ctx, response.Body)
-	return streams.Map(sseStream, convertSSE), nil
+	sseChan := httpx.ReadServerSentEvents(ctx, response.Body)
+	return streams.Map(streams.New(sseChan), convertSSE), nil
 }
 
 // convertSSE converts the given Server-Sent Event to a ChatCompletionEvent type.
