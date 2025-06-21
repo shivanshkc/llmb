@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -31,7 +30,6 @@ func Execute() error {
 	// Cancel the context upon interruption.
 	go func() {
 		<-signals
-		fmt.Println("\r- Ctrl+C pressed in Terminal")
 		cancelFunc()
 	}()
 
