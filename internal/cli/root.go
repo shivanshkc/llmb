@@ -1,3 +1,6 @@
+// Package cli contains all the command-line interface logic for the application,
+// powered by the cobra library. It defines the root command, subcommands,
+// and their respective flags.
 package cli
 
 import (
@@ -10,34 +13,59 @@ import (
 )
 
 var (
-	rootBaseURL, rootModel string
+	// rootBaseURL and rootModel hold the values from the root command's persistent flags.
+	// Recommended: Defining them at the package level allows all subcommands within this
+	// package (like `chat` and `bench`) to access these shared values directly and safely.
+	rootBaseURL string
+	rootModel   string
 )
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd represents the base command when called without any subcommands.
+// It serves as the entry point and parent for all other commands.
 var rootCmd = &cobra.Command{
 	Use:   "llmb",
 	Short: "A tool to interact with and benchmark Open AI compatible REST APIs.",
-	Long:  `A tool to interact with and benchmark Open AI compatible REST APIs.`,
+	Long: `A tool to interact with and benchmark Open AI compatible REST APIs.
+This CLI provides subcommands for interactive chat sessions and performance benchmarking.`,
 }
 
-// Execute executes the root command.
+// Execute is the primary entry point for the CLI application, called by main.go.
+//
+// Essential: It sets up a single, root cancellable context and wires it up to respond
+// to OS interruption signals (like Ctrl+C or SIGTERM). This context is then passed down
+// to all cobra commands, enabling graceful shutdown across the entire application.
+//
+// Gotcha: The signal listening happens in a separate goroutine. This is critical because
+// waiting on the `<-signals` channel is a blocking operation. Without a goroutine, the
+// application would halt here and never execute the user's command.
 func Execute() error {
-	// Cancellable context to handle interruptions.
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
+	// Create a root context that can be canceled.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Ensure cancel is called on exit to clean up context resources.
 
-	// Listen to interruption signals.
+	// Set up a channel to listen for specific OS signals.
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	// Cancel the context upon interruption.
+
+	// Unregister the signal handler on exit. This is good hygiene and
+	// prevents resource leaks in more complex application lifecycles.
+	defer signal.Stop(signals)
+
+	// Launch a goroutine to cancel the context upon receiving a signal.
 	go func() {
 		<-signals
-		cancelFunc()
+		cancel()
 	}()
 
+	// Execute the root command with the cancellable context.
 	return rootCmd.ExecuteContext(ctx)
 }
 
+// init configures the application's flags.
+//
+// Using `PersistentFlags` on the root command is the ideal way to handle
+// flags that are shared across multiple subcommands, like configuration settings.
+// This avoids code duplication and provides a consistent user experience.
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&rootBaseURL, "base-url", "u",
 		"http://localhost:8080", "Base URL of the API.")
