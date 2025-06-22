@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
@@ -12,7 +13,11 @@ type StreamBenchmarkResults struct {
 }
 
 // BenchmarkStream ...
-func BenchmarkStream(requestCount, concurrency int, sFunc StreamFunc) (StreamBenchmarkResults, error) {
+func BenchmarkStream(ctx context.Context, requestCount, concurrency int, sFunc StreamFunc) (StreamBenchmarkResults, error) {
+	// Context for managing local goroutines.
+	localCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// This will hold all timing information for all streams.
 	timingsChan := make(chan timings, requestCount)
 	defer close(timingsChan)
@@ -27,13 +32,19 @@ func BenchmarkStream(requestCount, concurrency int, sFunc StreamFunc) (StreamBen
 
 	go func() {
 		for i := 0; i < requestCount; i++ {
-			// Wait for turn.
-			semaphore <- struct{}{}
+			select {
+			// Either a fatal error occurred or the parent context was canceled.
+			case <-localCtx.Done():
+				return
+			// Acquire a spot.
+			case semaphore <- struct{}{}:
+			}
+
 			// Execute a stream concurrently.
 			go func(i int) {
-				// Release lock for the next concurrent request.
-				defer func() { <-semaphore }()
-				benchmarkOneStream(sFunc, timingsChan, errFatalChan)
+				benchmarkOneStream(localCtx, sFunc, timingsChan, errFatalChan)
+				// Release the spot for the next concurrent request.
+				<-semaphore
 			}(i)
 		}
 	}()
@@ -42,8 +53,9 @@ func BenchmarkStream(requestCount, concurrency int, sFunc StreamFunc) (StreamBen
 	// Collect results.
 	for i := range requestCount {
 		select {
-		// The loop above will not be able to catch the error of the final stream.
+		// Halt all operations upon an error.
 		case err := <-errFatalChan:
+			cancel()
 			return StreamBenchmarkResults{}, err
 		case st := <-timingsChan:
 			fmt.Printf("[%d/%d] requests complete.\n", i+1, requestCount)
@@ -62,15 +74,22 @@ func BenchmarkStream(requestCount, concurrency int, sFunc StreamFunc) (StreamBen
 // Otherwise, the result is sent to the timestamps channel.
 //
 // It is designed to publish results to channels instead of returning them to keep the master function cleaner.
-func benchmarkOneStream(sFunc StreamFunc, timingsChan chan timings, errFatalChan chan error) {
+func benchmarkOneStream(ctx context.Context, sFunc StreamFunc, timingsChan chan timings, errFatalChan chan error) {
 	// Time at which stream started.
 	start := time.Now()
-	// Collect all events from the stream.
-	events, err := sFunc.Collect()
+	// Begin the stream.
+	eventStream, err := sFunc()
 	// Time at which stream ended.
 	end := time.Now()
 
 	// Handle fatal error.
+	if err != nil {
+		errFatalChan <- err
+		return
+	}
+
+	// Collect all events.
+	events, err := eventStream.Exhaust(ctx)
 	if err != nil {
 		errFatalChan <- err
 		return

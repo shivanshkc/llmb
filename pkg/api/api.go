@@ -37,27 +37,24 @@ func NewClient(baseURL string) *Client {
 // ChatCompletionStream is a wrapper for the /chat/completions API with stream enabled.
 func (c *Client) ChatCompletionStream(
 	ctx context.Context, model string, messages []ChatMessage,
-) (streams.Stream[ChatCompletionEvent], error) {
-	// Shorthand.
-	nilStream := streams.Stream[ChatCompletionEvent]{}
-
+) (*streams.Stream[ChatCompletionEvent], error) {
 	// Form the API endpoint URL.
 	endpoint, err := url.JoinPath(c.baseURL, "v1/chat/completions")
 	if err != nil {
-		return nilStream, fmt.Errorf("failed to form API endpoint URL: %w", err)
+		return nil, fmt.Errorf("failed to form API endpoint URL: %w", err)
 	}
 
 	// Create a map for marshalling. This makes the JSON formation injection-proof.
 	requestBodyMap := map[string]any{"stream": true, "model": model, "messages": messages}
 	requestBody, err := json.Marshal(requestBodyMap)
 	if err != nil {
-		return nilStream, fmt.Errorf("failed to form API request body: %w", err)
+		return nil, fmt.Errorf("failed to form API request body: %w", err)
 	}
 
 	// Create the HTTP request.
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return nilStream, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	// Body is a JSON.
@@ -70,7 +67,7 @@ func (c *Client) ChatCompletionStream(
 	// Execute request with retries.
 	response, err := c.httpClient.DoRetry(request, 20, time.Millisecond*50)
 	if err != nil {
-		return nilStream, fmt.Errorf("failed to execute HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
 
 	// In case of error, return the status code with the body.
@@ -81,7 +78,7 @@ func (c *Client) ChatCompletionStream(
 		if err != nil {
 			responseBody = []byte("failed to read response body: " + err.Error())
 		}
-		return nilStream, fmt.Errorf("unexpected status code: %d, body: %s", response.StatusCode, string(responseBody))
+		return nil, fmt.Errorf("unexpected status code: %d, body: %s", response.StatusCode, string(responseBody))
 	}
 
 	// Start reading the events.

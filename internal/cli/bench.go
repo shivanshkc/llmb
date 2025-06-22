@@ -35,20 +35,20 @@ var benchCmd = &cobra.Command{
 		client := api.NewClient(*benchBaseURL)
 
 		// Benchmark-able function.
-		streamFunc := func() (streams.Stream[bench.Event], error) {
+		streamFunc := func() (*streams.Stream[bench.Event], error) {
 			// Single message chat.
 			messages := []api.ChatMessage{{Role: api.RoleUser, Content: *benchPrompt}}
 			// Get the stream.
 			cceStream, err := client.ChatCompletionStream(context.TODO(), *benchModel, messages)
 			if err != nil {
-				return streams.Stream[bench.Event]{}, fmt.Errorf("error in ChatCompletionStream call: %w", err)
+				return nil, fmt.Errorf("error in ChatCompletionStream call: %w", err)
 			}
 			// Convert to compatible channel type and return.
 			return streams.Map(cceStream, func(x api.ChatCompletionEvent) bench.Event { return x }), nil
 		}
 
 		// Run benchmark.
-		results, err := bench.BenchmarkStream(*benchRequestCount, *benchConcurrency, streamFunc)
+		results, err := bench.BenchmarkStream(cmd.Context(), *benchRequestCount, *benchConcurrency, streamFunc)
 		if err != nil {
 			fmt.Println("Error in benchmarking:", err)
 			os.Exit(1)

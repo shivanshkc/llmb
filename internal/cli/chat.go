@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/shivanshkc/llmb/pkg/api"
+	"github.com/shivanshkc/llmb/pkg/streams"
 )
 
 var (
@@ -73,19 +74,22 @@ var chatCmd = &cobra.Command{
 			fmt.Print(text.FgGreen.Sprint("Assistant: "))
 
 			var answer string
-			// Display streaming response and collect it to update chat.
-			for event := range eventStream.All {
+			// Prints the token present in the event and appends it to the answer string.
+			eventPrinter := func(event api.ChatCompletionEvent) struct{} {
 				for _, choice := range event.Choices {
 					if choice.Delta.Content != "" {
 						answer += choice.Delta.Content
 						fmt.Print(choice.Delta.Content)
 					}
 				}
+				return struct{}{}
 			}
+
+			// Map the stream to the printer and consume the stream.
+			_, _ = streams.Map(eventStream, eventPrinter).Exhaust(cmd.Context())
 
 			// Newline after assistant's response.
 			fmt.Println("")
-
 			// Update chat with the assistant's message.
 			chatMessages = append(chatMessages, api.ChatMessage{Role: api.RoleAssistant, Content: answer})
 		}
