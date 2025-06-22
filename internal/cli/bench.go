@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	benchPrompt                         *string
-	benchRequestCount, benchConcurrency *int
+	benchPrompt                         string
+	benchRequestCount, benchConcurrency int
 )
 
 // benchCmd represents the bench command
@@ -37,7 +37,7 @@ var benchCmd = &cobra.Command{
 		// Benchmark-able function.
 		streamFunc := func(ctx context.Context) (*streams.Stream[bench.Event], error) {
 			// Single message chat.
-			messages := []api.ChatMessage{{Role: api.RoleUser, Content: *benchPrompt}}
+			messages := []api.ChatMessage{{Role: api.RoleUser, Content: benchPrompt}}
 			// Get the stream.
 			cceStream, err := client.ChatCompletionStream(ctx, rootModel, messages)
 			if err != nil {
@@ -48,7 +48,7 @@ var benchCmd = &cobra.Command{
 		}
 
 		// Run benchmark.
-		results, err := bench.BenchmarkStream(cmd.Context(), *benchRequestCount, *benchConcurrency, streamFunc)
+		results, err := bench.BenchmarkStream(cmd.Context(), benchRequestCount, benchConcurrency, streamFunc)
 		if err != nil {
 			fmt.Println("Error in benchmarking:", err)
 			os.Exit(1)
@@ -62,13 +62,13 @@ var benchCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(benchCmd)
 
-	benchPrompt = benchCmd.Flags().StringP("prompt", "p",
+	benchCmd.Flags().StringVarP(&benchPrompt, "prompt", "p",
 		"", "Prompt to use.")
 
-	benchRequestCount = benchCmd.Flags().IntP("request-count", "n",
+	benchCmd.Flags().IntVarP(&benchRequestCount, "request-count", "n",
 		12, "Number of requests to perform.")
 
-	benchConcurrency = benchCmd.Flags().IntP("concurrency", "c",
+	benchCmd.Flags().IntVarP(&benchConcurrency, "concurrency", "c",
 		3, "Number of multiple requests to make at a time.")
 }
 

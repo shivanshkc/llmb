@@ -32,17 +32,17 @@ func validateBenchFlags() string {
 	}
 
 	// Prompt is required.
-	if *benchPrompt == "" {
+	if benchPrompt == "" {
 		return "A prompt is required."
 	}
 
 	// At least 1 request required.
-	if *benchRequestCount <= 0 {
+	if benchRequestCount <= 0 {
 		return "Request count must be greater than 0."
 	}
 
 	// At least 1 request should be executed concurrently.
-	if *benchConcurrency <= 0 {
+	if benchConcurrency <= 0 {
 		return "Concurrency must be greater than 0."
 	}
 
