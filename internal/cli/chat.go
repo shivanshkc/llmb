@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/shivanshkc/llmb/pkg/api"
-	"github.com/shivanshkc/llmb/pkg/streams"
 )
 
 var (
@@ -37,6 +36,7 @@ var chatCmd = &cobra.Command{
 		// Stdin reader to read user's input.
 		reader := bufio.NewReader(os.Stdin)
 
+		// The chat loop.
 		for {
 			// Respect context expiry.
 			select {
@@ -73,20 +73,25 @@ var chatCmd = &cobra.Command{
 			// Start showing assistant's response.
 			fmt.Print(text.FgGreen.Sprint("Assistant: "))
 
+			// The answer will be collected and appended to the chatMessages slice.
 			var answer string
-			// Prints the token present in the event and appends it to the answer string.
-			eventPrinter := func(event api.ChatCompletionEvent) struct{} {
-				for _, choice := range event.Choices {
-					if choice.Delta.Content != "" {
-						answer += choice.Delta.Content
-						fmt.Print(choice.Delta.Content)
-					}
+			// Loop to print the assistant's response token by token.
+			for {
+				event, ok, err := eventStream.NextContext(cmd.Context())
+				// Context canceled or stream finished.
+				if err != nil || !ok {
+					break
 				}
-				return struct{}{}
-			}
 
-			// Map the stream to the printer and consume the stream.
-			_, _ = streams.Map(eventStream, eventPrinter).Exhaust(cmd.Context())
+				// No answer from LLM.
+				if len(event.Choices) == 0 {
+					continue
+				}
+
+				// Collect the token as well as display it.
+				answer += event.Choices[0].Delta.Content
+				fmt.Print(event.Choices[0].Delta.Content)
+			}
 
 			// Newline after assistant's response.
 			fmt.Println("")
