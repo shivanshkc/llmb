@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
@@ -11,7 +12,6 @@ import (
 	"github.com/shivanshkc/llmb/pkg/api"
 	"github.com/shivanshkc/llmb/pkg/bench"
 	"github.com/shivanshkc/llmb/pkg/streams"
-	"github.com/shivanshkc/llmb/pkg/utils"
 )
 
 var (
@@ -91,7 +91,8 @@ func displayBenchmarkResults(results bench.StreamBenchmarkResults) {
 
 	t.AppendHeader(table.Row{"Metric", "Average", "Minimum", "Median", "Maximum", "P90", "P95"})
 
-	fd := utils.FormatDuration
+	// Shorthand.
+	fd := formatDuration
 
 	// AppendRows is formatted vertically to adhere to the line length limit
 	// and improve readability.
@@ -128,4 +129,36 @@ func displayBenchmarkResults(results bench.StreamBenchmarkResults) {
 	fmt.Println()
 	t.Render()
 	fmt.Println()
+}
+
+// FormatDuration formats a time.Duration into a human-readable string with an
+// appropriate unit (ns, μs, ms, or s).
+//
+// This function is designed to produce concise, readable output for display in
+// user interfaces like tables or logs, where the default `time.Duration.String()`
+// method (e.g., "1m23.456s") might be too verbose or precise.
+//
+// The unit is chosen based on the duration's magnitude:
+//   - Less than 1 microsecond: formatted in whole nanoseconds (e.g., "750ns").
+//   - Less than 1 millisecond: formatted in microseconds with 2 decimal places (e.g., "123.45μs").
+//   - Less than 1 second: formatted in milliseconds with 2 decimal places (e.g., "89.12ms").
+//   - 1 second or more: formatted in seconds with 2 decimal places (e.g., "5.78s").
+//
+// A zero duration is formatted as "0s".
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
+	}
+
+	// Format based on magnitude.
+	switch {
+	case d < time.Microsecond:
+		return fmt.Sprintf("%.0fns", float64(d.Nanoseconds()))
+	case d < time.Millisecond:
+		return fmt.Sprintf("%.2fμs", float64(d.Nanoseconds())/1000)
+	case d < time.Second:
+		return fmt.Sprintf("%.2fms", float64(d.Nanoseconds())/1000000)
+	default:
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	}
 }
