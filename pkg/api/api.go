@@ -10,13 +10,14 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/shivanshkc/llmb/pkg/utils/httputils"
+	"github.com/shivanshkc/llmb/pkg/httpx"
+	"github.com/shivanshkc/llmb/pkg/streams"
 )
 
 // Client represents an LLM REST API client.
 type Client struct {
 	baseURL    string
-	httpClient *httputils.RetryClient
+	httpClient *httpx.RetryClient
 }
 
 // ChatMessage represents a single message in the LLM chat.
@@ -29,51 +30,50 @@ type ChatMessage struct {
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL:    baseURL,
-		httpClient: &httputils.RetryClient{Client: &http.Client{}},
+		httpClient: &httpx.RetryClient{Client: &http.Client{}},
 	}
 }
 
 // ChatCompletionStream is a wrapper for the /chat/completions API with stream enabled.
 func (c *Client) ChatCompletionStream(
 	ctx context.Context, model string, messages []ChatMessage,
-) (<-chan ChatCompletionEvent, error) {
+) (*streams.Stream[ChatCompletionEvent], error) {
 	// Form the API endpoint URL.
 	endpoint, err := url.JoinPath(c.baseURL, "v1/chat/completions")
 	if err != nil {
 		return nil, fmt.Errorf("failed to form API endpoint URL: %w", err)
 	}
 
-	// Marshal messages to include in the response body.
-	messagesJSON, err := json.Marshal(messages)
+	// Create a map for marshalling. This makes the JSON formation injection-proof.
+	requestBodyMap := map[string]any{"stream": true, "model": model, "messages": messages}
+	requestBody, err := json.Marshal(requestBodyMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal messages: %w", err)
+		return nil, fmt.Errorf("failed to form API request body: %w", err)
 	}
 
-	// Server-Sent Events are enabled by "stream": true.
-	requestBody := []byte(`{ "stream": true, "model": "` + model + `", "messages": ` + string(messagesJSON) + ` }`)
-	requestBodyReader := bytes.NewReader(requestBody)
-
 	// Create the HTTP request.
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, requestBodyReader)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	// Body is a JSON.
-	httpRequest.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", "application/json")
 	// Make the request retryable.
-	httpRequest.GetBody = func() (io.ReadCloser, error) {
+	request.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(requestBody)), nil
 	}
 
 	// Execute request with retries.
-	response, err := c.httpClient.DoRetry(httpRequest, 20, time.Millisecond*50)
+	response, err := c.httpClient.DoRetry(request, 20, time.Millisecond*50)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
 
 	// In case of error, return the status code with the body.
 	if response.StatusCode != http.StatusOK {
+		defer func() { _ = response.Body.Close() }()
+		// Include body in the error for debug purposes.
 		responseBody, err := io.ReadAll(response.Body)
 		if err != nil {
 			responseBody = []byte("failed to read response body: " + err.Error())
@@ -82,28 +82,12 @@ func (c *Client) ChatCompletionStream(
 	}
 
 	// Start reading the events.
-	sseChan, err := httputils.ReadServerSentEvents(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read server events: %w", err)
-	}
-
-	// Channel to which the stream will be piped.
-	eventChan := make(chan ChatCompletionEvent, 100)
-	// Process events without blocking.
-	go func() {
-		defer close(eventChan)
-		defer func() { _ = response.Body.Close() }()
-
-		for sse := range sseChan {
-			eventChan <- convertSSE(sse)
-		}
-	}()
-
-	return eventChan, nil
+	sseChan := httpx.ReadServerSentEvents(ctx, response.Body)
+	return streams.Map(streams.New(sseChan), convertSSE), nil
 }
 
 // convertSSE converts the given Server-Sent Event to a ChatCompletionEvent type.
-func convertSSE(sse httputils.ServerSentEvent) ChatCompletionEvent {
+func convertSSE(sse httpx.ServerSentEvent) ChatCompletionEvent {
 	event := ChatCompletionEvent{index: sse.Index, timestamp: sse.Timestamp}
 
 	if sse.Error != nil {

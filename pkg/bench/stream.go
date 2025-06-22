@@ -1,34 +1,19 @@
 package bench
 
 import (
+	"context"
 	"time"
+
+	"github.com/shivanshkc/llmb/pkg/streams"
 )
 
-// Event is the building block of a stream.
-//
-// Only the index and timestamp of an event are required for benchmarking.
-// They are used to ordering and latency calculation respectively.
+// Event is the minimal interface a stream's event must implement to be benchmarked.
+// It provides the essential data needed for ordering and latency calculations.
 type Event interface {
-	Index() int
-	Timestamp() time.Time
+	Index() int           // The sequential index of the event, for stable sorting.
+	Timestamp() time.Time // The time the event was produced or received.
 }
 
-// StreamFunc represents a benchmark-able function.
-type StreamFunc func() (<-chan Event, error)
-
-// Consume the stream.
-func (f StreamFunc) Consume() ([]Event, error) {
-	// Start the stream.
-	eventChan, err := f()
-	if err != nil {
-		return nil, err
-	}
-
-	// Collect all events.
-	var events []Event
-	for event := range eventChan {
-		events = append(events, event)
-	}
-
-	return events, nil
-}
+// StreamFunc represents any operation that produces a cancellable stream of events.
+// This is the primary input to the benchmark runner.
+type StreamFunc func(ctx context.Context) (*streams.Stream[Event], error)

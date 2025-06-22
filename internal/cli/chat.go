@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -13,74 +14,73 @@ import (
 	"github.com/shivanshkc/llmb/pkg/api"
 )
 
-var (
-	chatBaseURL, chatModel *string
-)
-
-// chatCmd represents the chat command
+// chatCmd represents the `chat` command, providing an interactive, REPL-style
+// interface for conversing with a language model.
+//
+// It maintains a persistent chat history for the session, allowing for
+// follow-up questions. It also gracefully handles interruptions (like Ctrl+C)
+// at any point, including while waiting for user input.
 var chatCmd = &cobra.Command{
-	Use:   "chat",
-	Short: "Start a chat with the LLM.",
-	Long:  "Start a chat with the LLM.",
+	Use:     "chat",
+	Short:   "Start an interactive chat with the LLM.",
+	Long:    "Starts an interactive chat session with the specified language model, maintaining conversation history.",
+	PreRunE: func(cmd *cobra.Command, args []string) error { return validateChatFlags() },
 	Run: func(cmd *cobra.Command, args []string) {
-		// Validate flags before using them.
-		if message := validateChatFlags(); message != "" {
-			fmt.Println(message)
-			os.Exit(1)
-		}
-
-		// List of all messages in the chat.
+		// chatMessages holds the full conversation history for the current session.
 		var chatMessages []api.ChatMessage
-		// Client to interact with the LLM.
-		client := api.NewClient(*chatBaseURL)
-
-		// Stdin reader to read user's input.
+		client := api.NewClient(rootBaseURL)
 		reader := bufio.NewReader(os.Stdin)
 
+		// The main chat loop.
 		for {
-			// Prompt user for input.
 			fmt.Print(text.FgBlue.Sprint("You: "))
 
-			// Read and parse user input.
-			role, message, err := readChatInput(reader)
+			// Read user input with context-awareness. This call will unblock and
+			// return an error if the command's context is canceled (e.g., by Ctrl+C).
+			input, err := readStringContext(cmd.Context(), reader)
 			if err != nil {
-				fmt.Println("Failed to read input:", err)
-				continue
+				// If the error is from context cancellation, we exit silently.
+				// Otherwise, it might be a different I/O error we should report.
+				if !errors.Is(err, context.Canceled) {
+					fmt.Println("Failed to read input:", err)
+				}
+				return // Exit the command's Run function gracefully.
 			}
 
-			// Ignore empty inputs.
+			// Parse the raw input into a role and message content.
+			role, message := parseInput(input)
 			if message == "" {
-				continue
+				continue // Ignore empty inputs.
 			}
 
-			// Update chat with the user's message.
+			// Add the user's input to the chat history.
 			chatMessages = append(chatMessages, api.ChatMessage{Role: role, Content: message})
 
-			// Start LLM response stream.
-			eventChan, err := client.ChatCompletionStream(context.TODO(), *chatModel, chatMessages)
+			// Begin the streaming API call.
+			eventStream, err := client.ChatCompletionStream(cmd.Context(), rootModel, chatMessages)
 			if err != nil {
 				fmt.Println("Error streaming response:", err)
 				continue
 			}
 
-			// Start showing assistant's response.
+			// Consume the response stream token-by-token.
 			fmt.Print(text.FgGreen.Sprint("Assistant: "))
-
 			var answer string
-			// Display streaming response and collect it to update chat.
-			for event := range eventChan {
-				for _, choice := range event.Choices {
-					if choice.Delta.Content != "" {
-						answer += choice.Delta.Content
-						fmt.Print(choice.Delta.Content)
-					}
+			for {
+				event, ok, err := eventStream.NextContext(cmd.Context())
+				if err != nil || !ok {
+					break // Context canceled, stream finished, or an error occurred.
+				}
+
+				if len(event.Choices) > 0 {
+					token := event.Choices[0].Delta.Content
+					answer += token
+					fmt.Print(token)
 				}
 			}
+			fmt.Println("") // Newline after the full response.
 
-			// Newline after assistant's response.
-			fmt.Println("")
-
-			// Update chat with the assistant's message.
+			// Add the assistant's complete response to the chat history.
 			chatMessages = append(chatMessages, api.ChatMessage{Role: api.RoleAssistant, Content: answer})
 		}
 	},
@@ -88,49 +88,70 @@ var chatCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(chatCmd)
-
-	chatBaseURL = chatCmd.Flags().StringP("base-url", "u",
-		"http://localhost:8080", "Base URL of the API.")
-
-	chatModel = chatCmd.Flags().StringP("model", "m",
-		"gpt-4.1", "Name of the model to use.")
 }
 
-// readChatInput reads the user's input from stdin for the chat command.
+// readStringContext reads a line of text from a Reader but aborts early
+// if the provided context is canceled. This is essential for making the
+// blocking read from os.Stdin responsive to interruptions like Ctrl+C.
 //
-// It allows the user to assume any role, system, user or assistant.
-//
-// If the user input starts with a role and colon, like: "system: Hello" or "assistant: Hello", then the mentioned
-// role is used to communicate with the LLM. Role matching is case-insensitive.
-func readChatInput(reader *bufio.Reader) (string, string, error) {
-	// Read user input.
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return "", "", fmt.Errorf("error reading input: %w", err)
+// This pattern is the standard Go idiom for making a synchronous, blocking call
+// cancellable. It works by wrapping the blocking call in a goroutine and racing
+// its result against the context's Done channel.
+// A known trade-off is that if the context is canceled, the producer goroutine
+// will remain blocked on `reader.ReadString` until the read completes, but this
+// goroutine leak is temporary and harmless for a CLI application.
+func readStringContext(ctx context.Context, reader *bufio.Reader) (string, error) {
+	// A struct to hold the result of the I/O operation.
+	type readResult struct {
+		input string
+		err   error
 	}
 
-	// Ignore empty inputs.
-	if input = strings.TrimSpace(input); input == "" {
-		return "", "", nil
+	// This buffered channel of size 1 is crucial. It holds the result and
+	// prevents the producer goroutine from leaking by ensuring its send will
+	// complete even if the consumer has already returned due to cancellation.
+	resultChan := make(chan readResult, 1)
+
+	// Launch a goroutine to perform the blocking read.
+	go func() {
+		input, err := reader.ReadString('\n')
+		resultChan <- readResult{input: input, err: err}
+	}()
+
+	// Race the read operation against context cancellation.
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case result := <-resultChan:
+		return result.input, result.err
+	}
+}
+
+// parseInput sanitizes raw user input and parses it to determine the message
+// content and the intended role (system, user, or assistant).
+// If no role prefix (e.g., "system:") is found, it defaults to the "user" role.
+func parseInput(input string) (role, message string) {
+	message = strings.TrimSpace(input)
+	if message == "" {
+		return "", ""
 	}
 
-	const systemPrefix, assistantPrefix, userPrefix = api.RoleSystem + ":", api.RoleAssistant + ":", api.RoleUser + ":"
+	const (
+		systemPrefix    = api.RoleSystem + ":"
+		assistantPrefix = api.RoleAssistant + ":"
+		userPrefix      = api.RoleUser + ":"
+	)
 
-	// Respect system role if provided.
-	if len(input) >= len(systemPrefix) && strings.EqualFold(input[:len(systemPrefix)], systemPrefix) {
-		return api.RoleSystem, strings.TrimSpace(input[len(systemPrefix):]), nil
+	if strings.HasPrefix(strings.ToLower(message), systemPrefix) {
+		return api.RoleSystem, strings.TrimSpace(message[len(systemPrefix):])
+	}
+	if strings.HasPrefix(strings.ToLower(message), assistantPrefix) {
+		return api.RoleAssistant, strings.TrimSpace(message[len(assistantPrefix):])
+	}
+	if strings.HasPrefix(strings.ToLower(message), userPrefix) {
+		return api.RoleUser, strings.TrimSpace(message[len(userPrefix):])
 	}
 
-	// Respect assistant role if provided.
-	if len(input) >= len(assistantPrefix) && strings.EqualFold(input[:len(assistantPrefix)], assistantPrefix) {
-		return api.RoleAssistant, strings.TrimSpace(input[len(assistantPrefix):]), nil
-	}
-
-	// Respect user role if provided.
-	if len(input) >= len(userPrefix) && strings.EqualFold(input[:len(userPrefix)], userPrefix) {
-		return api.RoleUser, strings.TrimSpace(input[len(userPrefix):]), nil
-	}
-
-	// Could be unknown role or no role. Assume default role.
-	return api.RoleUser, input, nil
+	// Default to the user role if no prefix is provided.
+	return api.RoleUser, message
 }

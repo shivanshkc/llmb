@@ -4,126 +4,161 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
 
 	"github.com/shivanshkc/llmb/pkg/api"
 	"github.com/shivanshkc/llmb/pkg/bench"
-	"github.com/shivanshkc/llmb/pkg/utils/miscutils"
+	"github.com/shivanshkc/llmb/pkg/streams"
 )
 
 var (
-	benchBaseURL, benchModel, benchPrompt *string
-	benchRequestCount, benchConcurrency   *int
+	benchPrompt       string
+	benchRequestCount int
+	benchConcurrency  int
 )
 
-// benchCmd represents the bench command
+// benchCmd represents the `bench` command for running performance benchmarks
+// against an OpenAI-compatible API.
+//
+// This command acts as an orchestrator: it sets up the client and the function
+// to be benchmarked, then delegates all concurrent execution and metric calculation
+// to the `pkg/bench` package. Finally, it formats and displays the results.
+//
+// This command leverages persistent flags (`--base-url`, `--model`)
+// defined on the root command for shared configuration.
 var benchCmd = &cobra.Command{
-	Use:   "bench",
-	Short: "Benchmark an Open AI compatible REST API.",
-	Long:  "Benchmark an Open AI compatible REST API.",
+	Use:     "bench",
+	Short:   "Benchmark an Open AI compatible REST API.",
+	Long:    "Concurrently executes requests against a streaming API and reports performance metrics.",
+	PreRunE: func(cmd *cobra.Command, args []string) error { return validateBenchFlags() },
 	Run: func(cmd *cobra.Command, args []string) {
-		// Validate flags before using them.
-		if message := validateBenchFlags(); message != "" {
-			fmt.Println(message)
-			os.Exit(1)
-		}
+		client := api.NewClient(rootBaseURL)
 
-		// Client for the LLM REST API.
-		client := api.NewClient(*benchBaseURL)
-
-		// Benchmark-able function.
-		streamFunc := func() (<-chan bench.Event, error) {
-			// Single message chat.
-			messages := []api.ChatMessage{{Role: api.RoleUser, Content: *benchPrompt}}
-			// Get the stream.
-			cceChan, err := client.ChatCompletionStream(context.TODO(), *benchModel, messages)
+		// streamFunc is the core function to be benchmarked. It's a factory that
+		// captures user flags and creates a cancellable API stream each time it's
+		// called by the benchmark runner.
+		//
+		// This closure is a clean "adapter" between the CLI layer and the reusable
+		// benchmark package. It adapts the specific `api.ChatCompletionEvent`
+		// stream into the generic `bench.Event` stream required by the runner.
+		streamFunc := func(ctx context.Context) (*streams.Stream[bench.Event], error) {
+			messages := []api.ChatMessage{{Role: api.RoleUser, Content: benchPrompt}}
+			cceStream, err := client.ChatCompletionStream(ctx, rootModel, messages)
 			if err != nil {
 				return nil, fmt.Errorf("error in ChatCompletionStream call: %w", err)
 			}
-			// Convert to compatible channel type and return.
-			return convertEventChannel(cceChan), nil
+			// Adapt the concrete event type to the generic benchmark interface.
+			return streams.Map(cceStream, func(e api.ChatCompletionEvent) bench.Event { return e }), nil
 		}
 
-		// Run benchmark.
-		results, err := bench.BenchmarkStream(*benchRequestCount, *benchConcurrency, streamFunc)
+		// Delegate all concurrent execution and aggregation to the benchmark package.
+		results, err := bench.BenchmarkStream(cmd.Context(), benchRequestCount, benchConcurrency, streamFunc)
 		if err != nil {
-			fmt.Println("Error in benchmarking:", err)
+			fmt.Println("Error during benchmarking:", err)
 			os.Exit(1)
 		}
 
-		// Display to caller.
 		displayBenchmarkResults(results)
 	},
 }
 
+// init registers the bench command with the root command and defines its local flags.
 func init() {
 	rootCmd.AddCommand(benchCmd)
 
-	benchBaseURL = benchCmd.Flags().StringP("base-url", "u",
-		"http://localhost:8080", "Base URL of the API.")
+	benchCmd.Flags().StringVarP(&benchPrompt, "prompt", "p",
+		"", "Prompt to use for all requests.")
 
-	benchModel = benchCmd.Flags().StringP("model", "m",
-		"gpt-4.1", "Name of the model to use.")
+	benchCmd.Flags().IntVarP(&benchRequestCount, "request-count", "n",
+		12, "Total number of requests to perform.")
 
-	benchPrompt = benchCmd.Flags().StringP("prompt", "p",
-		"", "Prompt to use.")
-
-	benchRequestCount = benchCmd.Flags().IntP("request-count", "n",
-		12, "Number of requests to perform.")
-
-	benchConcurrency = benchCmd.Flags().IntP("concurrency", "c",
+	benchCmd.Flags().IntVarP(&benchConcurrency, "concurrency", "c",
 		3, "Number of multiple requests to make at a time.")
 }
 
-// convertEventChannel essentially converts "<-chan implementation" to "<-chan interface".
+// displayBenchmarkResults formats and prints the given benchmark results in a
+// human-readable table to standard output.
 //
-// While the `api.ChatCompletionEvent` type implements the `bench.Event` interface,
-// it doesn't mean that `chan api.ChatCompletionEvent` is the same as `chan bench.Event`.
-// So, this conversion has to be manual.
-func convertEventChannel(cceChan <-chan api.ChatCompletionEvent) <-chan bench.Event {
-	benchEventChan := make(chan bench.Event, 100)
-
-	// Pipe without blocking.
-	go func() {
-		// Both channels close together.
-		defer close(benchEventChan)
-		for event := range cceChan {
-			benchEventChan <- event
-		}
-	}()
-
-	return benchEventChan
-}
-
-// displayBenchmarkResults prints the given results in a human-readable format.
+// Using a dedicated table library like `go-pretty/table` provides a
+// professional and easy-to-read output for CLI tools.
 func displayBenchmarkResults(results bench.StreamBenchmarkResults) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
-
-	// Set style
 	t.SetStyle(table.StyleColoredDark)
-	// Header
-	t.AppendHeader(table.Row{"Metric", "Average", "Minimum", "Median", "Maximum", "P90", "P95"})
-	// Shorthand.
-	fd := miscutils.FormatDuration
 
-	// Add rows
+	t.AppendHeader(table.Row{"Metric", "Average", "Minimum", "Median", "Maximum", "P90", "P95"})
+
+	// Shorthand.
+	fd := formatDuration
+
+	// AppendRows is formatted vertically to adhere to the line length limit
+	// and improve readability.
 	t.AppendRows([]table.Row{
-		{"TTFT", fd(results.TTFT.Avg), fd(results.TTFT.Min),
-			fd(results.TTFT.Med), fd(results.TTFT.Max),
-			fd(results.TTFT.P90), fd(results.TTFT.P95)},
-		{"TBT", fd(results.TBT.Avg), fd(results.TBT.Min),
-			fd(results.TBT.Med), fd(results.TBT.Max),
-			fd(results.TBT.P90), fd(results.TBT.P95)},
-		{"TT", fd(results.TT.Avg), fd(results.TT.Min),
-			fd(results.TT.Med), fd(results.TT.Max),
-			fd(results.TT.P90), fd(results.TT.P95)},
+		{
+			"Time To First Token (TTFT)",
+			fd(results.TTFT.Avg),
+			fd(results.TTFT.Min),
+			fd(results.TTFT.Med),
+			fd(results.TTFT.Max),
+			fd(results.TTFT.P90),
+			fd(results.TTFT.P95),
+		},
+		{
+			"Time Between Tokens (TBT)",
+			fd(results.TBT.Avg),
+			fd(results.TBT.Min),
+			fd(results.TBT.Med),
+			fd(results.TBT.Max),
+			fd(results.TBT.P90),
+			fd(results.TBT.P95),
+		},
+		{
+			"Total Time (TT)",
+			fd(results.TT.Avg),
+			fd(results.TT.Min),
+			fd(results.TT.Med),
+			fd(results.TT.Max),
+			fd(results.TT.P90),
+			fd(results.TT.P95),
+		},
 	})
 
-	// Render
 	fmt.Println()
 	t.Render()
 	fmt.Println()
+}
+
+// FormatDuration formats a time.Duration into a human-readable string with an
+// appropriate unit (ns, μs, ms, or s).
+//
+// This function is designed to produce concise, readable output for display in
+// user interfaces like tables or logs, where the default `time.Duration.String()`
+// method (e.g., "1m23.456s") might be too verbose or precise.
+//
+// The unit is chosen based on the duration's magnitude:
+//   - Less than 1 microsecond: formatted in whole nanoseconds (e.g., "750ns").
+//   - Less than 1 millisecond: formatted in microseconds with 2 decimal places (e.g., "123.45μs").
+//   - Less than 1 second: formatted in milliseconds with 2 decimal places (e.g., "89.12ms").
+//   - 1 second or more: formatted in seconds with 2 decimal places (e.g., "5.78s").
+//
+// A zero duration is formatted as "0s".
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
+	}
+
+	// Format based on magnitude.
+	switch {
+	case d < time.Microsecond:
+		return fmt.Sprintf("%.0fns", float64(d.Nanoseconds()))
+	case d < time.Millisecond:
+		return fmt.Sprintf("%.2fμs", float64(d.Nanoseconds())/1000)
+	case d < time.Second:
+		return fmt.Sprintf("%.2fms", float64(d.Nanoseconds())/1000000)
+	default:
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	}
 }

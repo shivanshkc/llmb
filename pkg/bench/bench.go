@@ -1,56 +1,33 @@
 package bench
 
 import (
+	"context"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 )
 
-// StreamBenchmarkResults ...
+// StreamBenchmarkResults holds the final aggregated metrics for a benchmark run.
 type StreamBenchmarkResults struct {
-	TTFT, TBT, TT Metrics
+	TTFT Metrics // Time To First Token.
+	TBT  Metrics // Time Between Tokens.
+	TT   Metrics // Total Time (end-to-end).
 }
 
-// BenchmarkStream ...
-func BenchmarkStream(requestCount, concurrency int, sFunc StreamFunc) (StreamBenchmarkResults, error) {
-	// This will hold all timing information for all streams.
-	timingsChan := make(chan timings, requestCount)
-	defer close(timingsChan)
-
-	// This channel makes sure only `concurrency` requests execute concurrently at a given time.
-	semaphore := make(chan struct{}, concurrency)
-	defer close(semaphore)
-
-	// Channel to receive fatal errors. These errors immediately halt all operations.
-	errFatalChan := make(chan error, 1)
-	defer close(errFatalChan)
-
-	go func() {
-		for i := 0; i < requestCount; i++ {
-			// Wait for turn.
-			semaphore <- struct{}{}
-			// Execute a stream concurrently.
-			go func(i int) {
-				// Release lock for the next concurrent request.
-				defer func() { <-semaphore }()
-				benchmarkOneStream(sFunc, timingsChan, errFatalChan)
-			}(i)
-		}
-	}()
-
-	timingsArr := make(timingsArray, 0, requestCount)
-	// Collect results.
-	for i := range requestCount {
-		select {
-		// The loop above will not be able to catch the error of the final stream.
-		case err := <-errFatalChan:
-			return StreamBenchmarkResults{}, err
-		case st := <-timingsChan:
-			fmt.Printf("[%d/%d] requests complete.\n", i+1, requestCount)
-			timingsArr = append(timingsArr, st)
-		}
+// BenchmarkStream concurrently executes a given stream-producing function and
+// aggregates timing metrics. It manages concurrency with a semaphore and ensures
+// safe, leak-free shutdown using a context and WaitGroup.
+func BenchmarkStream(
+	ctx context.Context, requestCount, concurrency int, funk StreamFunc,
+) (StreamBenchmarkResults, error) {
+	// Run all streams and collect results.
+	timingsArr, err := runStreams(ctx, requestCount, concurrency, funk)
+	if err != nil {
+		return StreamBenchmarkResults{}, fmt.Errorf("error while running streams: %w", err)
 	}
 
+	// All runs were successful, calculate and return final metrics.
 	return StreamBenchmarkResults{
 		TTFT: durations(timingsArr.TTFTs()).Metrics(),
 		TBT:  durations(timingsArr.TBTs()).Metrics(),
@@ -58,25 +35,105 @@ func BenchmarkStream(requestCount, concurrency int, sFunc StreamFunc) (StreamBen
 	}, nil
 }
 
-// benchmarkOneStream executes the given stream once. If there's an error, it is sent to the error channel.
-// Otherwise, the result is sent to the timestamps channel.
-//
-// It is designed to publish results to channels instead of returning them to keep the master function cleaner.
-func benchmarkOneStream(sFunc StreamFunc, timingsChan chan timings, errFatalChan chan error) {
+// runStreams executes the stream-producing function for a total of `requestCount`
+// times with the given level of concurrency, and returns the timings information
+// of all streams.
+func runStreams(ctx context.Context, requestCount, concurrency int, funk StreamFunc,
+) (timingsArray, error) {
+	// Use a cancellable context to manage the lifecycle of all workers.
+	// This context is passed down to every operation.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Channels required for the operation.
+	timingsChan := make(chan timings, requestCount)
+	errChan := make(chan error, 1) // Channel to capture the first fatal error.
+	semaphore := make(chan struct{}, concurrency)
+
+	// WaitGroup ensures that the channels are not closed before all goroutines finish.
+	var wg sync.WaitGroup
+	wg.Add(requestCount)
+
+	// Launch a goroutine to spawn workers, preventing the main thread from blocking.
+	go func() {
+		for i := 0; i < requestCount; i++ {
+			select {
+			case <-ctx.Done(): // Stop launching new workers if context is canceled.
+				wg.Done() // Decrement wg for workers that will never be launched.
+				continue
+			case semaphore <- struct{}{}:
+				// Acquired a concurrency spot.
+			}
+
+			go func() {
+				defer func() { <-semaphore }() // Release spot when done.
+				defer wg.Done()
+
+				if t, err := runOneStream(ctx, funk); err != nil {
+					// On error, send it without blocking and cancel all other workers.
+					select {
+					case errChan <- err:
+						cancel() // Signal all other goroutines to stop.
+					default:
+					}
+				} else {
+					// This won't block as timingsChan has the size equal to the total request count.
+					timingsChan <- t
+				}
+			}()
+		}
+	}()
+
+	// Launch a final goroutine to wait for all workers to finish and then
+	// close the channels. This signals the main goroutine that all results are in.
+	go func() {
+		wg.Wait()
+		close(timingsChan)
+		close(errChan)
+	}()
+
+	timingsArr := make(timingsArray, 0, requestCount)
+	// This approach waits for all workers to complete before checking for an error.
+	// A select-case loop on both timingsChan and errChan would allow for a "fail-fast"
+	// behavior, returning immediately upon the first error. However, for typical
+	// benchmark runs, the current simpler approach is more than sufficient.
+	for t := range timingsChan {
+		timingsArr = append(timingsArr, t)
+		fmt.Printf("[%d/%d] requests complete.\n", len(timingsArr), requestCount)
+	}
+
+	// After collecting all successful results, check if an error occurred.
+	if err := <-errChan; err != nil {
+		return nil, fmt.Errorf("a stream worker failed: %w", err)
+	}
+
+	// All runs were successful.
+	return timingsArr, nil
+}
+
+// runOneStream executes the stream-producing function once and returns its
+// timings or an error.
+func runOneStream(ctx context.Context, funk StreamFunc) (timings, error) {
 	// Time at which stream started.
 	start := time.Now()
-	// Collect all events from the stream.
-	events, err := sFunc.Consume()
+	// Begin the stream.
+	eventStream, err := funk(ctx)
+	// Handle fatal error.
+	if err != nil {
+		return timings{}, fmt.Errorf("failed to start stream: %w", err)
+	}
+
+	// Collect all events.
+	events, err := eventStream.Exhaust(ctx)
+	if err != nil {
+		return timings{}, fmt.Errorf("failed to exhaust stream: %w", err)
+	}
+
 	// Time at which stream ended.
 	end := time.Now()
 
-	// Handle fatal error.
-	if err != nil {
-		errFatalChan <- err
-		return
-	}
-
-	// Sort events as their order may have jumbled because of various concurrent operations.
+	// Sort events by index to ensure correct TTFT and TBT calculations,
+	// as concurrency might jumble collection order.
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Index() < events[j].Index() })
 
 	// Collect event timestamps.
@@ -85,6 +142,5 @@ func benchmarkOneStream(sFunc StreamFunc, timingsChan chan timings, errFatalChan
 		eventTimestamps[i] = event.Timestamp()
 	}
 
-	// Publish results.
-	timingsChan <- timings{Start: start, End: end, Events: eventTimestamps}
+	return timings{Start: start, End: end, Events: eventTimestamps}, nil
 }

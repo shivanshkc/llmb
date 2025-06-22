@@ -4,6 +4,8 @@ SHELL=/usr/bin/env bash
 application_name        = llmb
 application_binary_name = llmb
 
+prompt = "Generate a comma-separated list of all prime numbers between 30 and 60, nothing else."
+
 # Builds the project.
 build:
 	@echo "+$@"
@@ -24,3 +26,10 @@ lint:
 	@echo "+$@"
 	@golangci-lint run ./...
 
+chat: build
+	@echo "+$@"
+	@bin/llmb chat -u http://localhost:8080 -m llama3.1
+
+bench: build
+	@echo "+$@"
+	@bin/llmb bench -u http://localhost:8080 -m llama3.1 -p $(prompt)
