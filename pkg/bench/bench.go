@@ -93,7 +93,10 @@ func runStreams(ctx context.Context, requestCount, concurrency int, funk StreamF
 	}()
 
 	timingsArr := make(timingsArray, 0, requestCount)
-	// This loop now safely terminates when timingsChan is closed.
+	// This approach waits for all workers to complete before checking for an error.
+	// A select-case loop on both timingsChan and errChan would allow for a "fail-fast"
+	// behavior, returning immediately upon the first error. However, for typical
+	// benchmark runs, the current simpler approach is more than sufficient.
 	for t := range timingsChan {
 		timingsArr = append(timingsArr, t)
 		fmt.Printf("[%d/%d] requests complete.\n", len(timingsArr), requestCount)
