@@ -14,10 +14,6 @@ import (
 	"github.com/shivanshkc/llmb/pkg/api"
 )
 
-var (
-	chatBaseURL, chatModel *string
-)
-
 // chatCmd represents the `chat` command, providing an interactive, REPL-style
 // interface for conversing with a language model.
 //
@@ -36,7 +32,7 @@ var chatCmd = &cobra.Command{
 
 		// chatMessages holds the full conversation history for the current session.
 		var chatMessages []api.ChatMessage
-		client := api.NewClient(*chatBaseURL)
+		client := api.NewClient(rootBaseURL)
 		reader := bufio.NewReader(os.Stdin)
 
 		// The main chat loop.
@@ -65,7 +61,7 @@ var chatCmd = &cobra.Command{
 			chatMessages = append(chatMessages, api.ChatMessage{Role: role, Content: message})
 
 			// Begin the streaming API call.
-			eventStream, err := client.ChatCompletionStream(cmd.Context(), *chatModel, chatMessages)
+			eventStream, err := client.ChatCompletionStream(cmd.Context(), rootModel, chatMessages)
 			if err != nil {
 				fmt.Println("Error streaming response:", err)
 				continue
@@ -96,15 +92,9 @@ var chatCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(chatCmd)
-
-	chatBaseURL = chatCmd.Flags().StringP("base-url", "u",
-		"http://localhost:8080", "Base URL of the API.")
-
-	chatModel = chatCmd.Flags().StringP("model", "m",
-		"gpt-4.1", "Name of the model to use.")
 }
 
-// readStringContext reads a line of text from a bufio.Reader but aborts early
+// readStringContext reads a line of text from a Reader but aborts early
 // if the provided context is canceled. This is essential for making the
 // blocking read from os.Stdin responsive to interruptions like Ctrl+C.
 //

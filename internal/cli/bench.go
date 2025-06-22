@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	benchBaseURL, benchModel, benchPrompt *string
-	benchRequestCount, benchConcurrency   *int
+	benchPrompt                         *string
+	benchRequestCount, benchConcurrency *int
 )
 
 // benchCmd represents the bench command
@@ -32,14 +32,14 @@ var benchCmd = &cobra.Command{
 		}
 
 		// Client for the LLM REST API.
-		client := api.NewClient(*benchBaseURL)
+		client := api.NewClient(rootBaseURL)
 
 		// Benchmark-able function.
 		streamFunc := func(ctx context.Context) (*streams.Stream[bench.Event], error) {
 			// Single message chat.
 			messages := []api.ChatMessage{{Role: api.RoleUser, Content: *benchPrompt}}
 			// Get the stream.
-			cceStream, err := client.ChatCompletionStream(ctx, *benchModel, messages)
+			cceStream, err := client.ChatCompletionStream(ctx, rootModel, messages)
 			if err != nil {
 				return nil, fmt.Errorf("error in ChatCompletionStream call: %w", err)
 			}
@@ -61,12 +61,6 @@ var benchCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(benchCmd)
-
-	benchBaseURL = benchCmd.Flags().StringP("base-url", "u",
-		"http://localhost:8080", "Base URL of the API.")
-
-	benchModel = benchCmd.Flags().StringP("model", "m",
-		"gpt-4.1", "Name of the model to use.")
 
 	benchPrompt = benchCmd.Flags().StringP("prompt", "p",
 		"", "Prompt to use.")

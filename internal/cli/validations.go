@@ -4,21 +4,31 @@ import (
 	"net/url"
 )
 
-// validateBenchFlags validates the flags of the bench command.
-func validateBenchFlags() string {
+// validateRootFlags validates the flags of the root command.
+func validateRootFlags() string {
 	// Base URL is required.
-	if *benchBaseURL == "" {
+	if rootBaseURL == "" {
 		return "Base URL is required."
 	}
 
 	// Must be a valid URL.
-	if _, err := url.Parse(*benchBaseURL); err != nil {
+	if _, err := url.Parse(rootBaseURL); err != nil {
 		return "Invalid Base URL: " + err.Error()
 	}
 
 	// Model is required.
-	if *benchModel == "" {
+	if rootModel == "" {
 		return "Model is required."
+	}
+
+	return ""
+}
+
+// validateBenchFlags validates the flags of the bench command.
+func validateBenchFlags() string {
+	// Root command flags are used by the bench command too.
+	if message := validateRootFlags(); message != "" {
+		return message
 	}
 
 	// Prompt is required.
@@ -41,20 +51,6 @@ func validateBenchFlags() string {
 
 // validateChatFlags validates the flags of the chat command.
 func validateChatFlags() string {
-	// Base URL is required.
-	if *chatBaseURL == "" {
-		return "Base URL is required."
-	}
-
-	// Must be a valid URL.
-	if _, err := url.Parse(*chatBaseURL); err != nil {
-		return "Invalid Base URL: " + err.Error()
-	}
-
-	// Model is required.
-	if *chatModel == "" {
-		return "Model is required."
-	}
-
-	return ""
+	// Root command flags are used by the chat command too.
+	return validateRootFlags()
 }
