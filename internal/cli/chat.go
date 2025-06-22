@@ -21,15 +21,11 @@ import (
 // follow-up questions. It also gracefully handles interruptions (like Ctrl+C)
 // at any point, including while waiting for user input.
 var chatCmd = &cobra.Command{
-	Use:   "chat",
-	Short: "Start an interactive chat with the LLM.",
-	Long:  "Starts an interactive chat session with the specified language model, maintaining conversation history.",
+	Use:     "chat",
+	Short:   "Start an interactive chat with the LLM.",
+	Long:    "Starts an interactive chat session with the specified language model, maintaining conversation history.",
+	PreRunE: func(cmd *cobra.Command, args []string) error { return validateChatFlags() },
 	Run: func(cmd *cobra.Command, args []string) {
-		if message := validateChatFlags(); message != "" {
-			fmt.Println(message)
-			os.Exit(1)
-		}
-
 		// chatMessages holds the full conversation history for the current session.
 		var chatMessages []api.ChatMessage
 		client := api.NewClient(rootBaseURL)
@@ -98,9 +94,9 @@ func init() {
 // if the provided context is canceled. This is essential for making the
 // blocking read from os.Stdin responsive to interruptions like Ctrl+C.
 //
-// Gotcha: This pattern is the standard Go idiom for making a synchronous,
-// blocking call cancellable. It works by wrapping the blocking call in a
-// goroutine and racing its result against the context's Done channel.
+// This pattern is the standard Go idiom for making a synchronous, blocking call
+// cancellable. It works by wrapping the blocking call in a goroutine and racing
+// its result against the context's Done channel.
 // A known trade-off is that if the context is canceled, the producer goroutine
 // will remain blocked on `reader.ReadString` until the read completes, but this
 // goroutine leak is temporary and harmless for a CLI application.

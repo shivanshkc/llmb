@@ -14,7 +14,7 @@ import (
 
 var (
 	// rootBaseURL and rootModel hold the values from the root command's persistent flags.
-	// Recommended: Defining them at the package level allows all subcommands within this
+	// Defining them at the package level allows all subcommands within this
 	// package (like `chat` and `bench`) to access these shared values directly and safely.
 	rootBaseURL string
 	rootModel   string
@@ -31,13 +31,9 @@ This CLI provides subcommands for interactive chat sessions and performance benc
 
 // Execute is the primary entry point for the CLI application, called by main.go.
 //
-// Essential: It sets up a single, root cancellable context and wires it up to respond
+// It sets up a single, root cancellable context and wires it up to respond
 // to OS interruption signals (like Ctrl+C or SIGTERM). This context is then passed down
 // to all cobra commands, enabling graceful shutdown across the entire application.
-//
-// Gotcha: The signal listening happens in a separate goroutine. This is critical because
-// waiting on the `<-signals` channel is a blocking operation. Without a goroutine, the
-// application would halt here and never execute the user's command.
 func Execute() error {
 	// Create a root context that can be canceled.
 	ctx, cancel := context.WithCancel(context.Background())

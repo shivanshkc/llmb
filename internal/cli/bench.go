@@ -30,23 +30,19 @@ var (
 // This command leverages persistent flags (`--base-url`, `--model`)
 // defined on the root command for shared configuration.
 var benchCmd = &cobra.Command{
-	Use:   "bench",
-	Short: "Benchmark an Open AI compatible REST API.",
-	Long:  "Concurrently executes requests against a streaming API and reports performance metrics.",
+	Use:     "bench",
+	Short:   "Benchmark an Open AI compatible REST API.",
+	Long:    "Concurrently executes requests against a streaming API and reports performance metrics.",
+	PreRunE: func(cmd *cobra.Command, args []string) error { return validateBenchFlags() },
 	Run: func(cmd *cobra.Command, args []string) {
-		if message := validateBenchFlags(); message != "" {
-			fmt.Println(message)
-			os.Exit(1)
-		}
-
 		client := api.NewClient(rootBaseURL)
 
 		// streamFunc is the core function to be benchmarked. It's a factory that
 		// captures user flags and creates a cancellable API stream each time it's
 		// called by the benchmark runner.
 		//
-		// Recommended: This closure is a clean "adapter" between the CLI layer and
-		// the reusable benchmark package. It adapts the specific `api.ChatCompletionEvent`
+		// This closure is a clean "adapter" between the CLI layer and the reusable
+		// benchmark package. It adapts the specific `api.ChatCompletionEvent`
 		// stream into the generic `bench.Event` stream required by the runner.
 		streamFunc := func(ctx context.Context) (*streams.Stream[bench.Event], error) {
 			messages := []api.ChatMessage{{Role: api.RoleUser, Content: benchPrompt}}
@@ -86,7 +82,7 @@ func init() {
 // displayBenchmarkResults formats and prints the given benchmark results in a
 // human-readable table to standard output.
 //
-// Recommended: Using a dedicated table library like `go-pretty/table` provides a
+// Using a dedicated table library like `go-pretty/table` provides a
 // professional and easy-to-read output for CLI tools.
 func displayBenchmarkResults(results bench.StreamBenchmarkResults) {
 	t := table.NewWriter()
