@@ -1,3 +1,21 @@
+# [1.3.0](https://github.com/shivanshkc/llmb/compare/v1.2.0...v1.3.0) (2025-06-22)
+
+
+### Bug Fixes
+
+* **core:** json injection vuln and response body close ([494b1bc](https://github.com/shivanshkc/llmb/commit/494b1bc4e86d38550eee77a09eb9180038fbc656))
+* **core:** ReadServerSentEvents correctly handles context expiry ([c002912](https://github.com/shivanshkc/llmb/commit/c002912a6f55cc541070cbcfb34bef877059dd8e))
+* **core:** RetryClient context expiry fix ([2106448](https://github.com/shivanshkc/llmb/commit/2106448f89853d2ebdbe8cd781f2f1ad443cb6c6))
+* **core:** TT timing fix, avoid redundant sorting ([e766433](https://github.com/shivanshkc/llmb/commit/e766433ed6672e987d3788830ea3cbbbd3880fab))
+* **core:** unncessary sync.Once removed ([21f5fc7](https://github.com/shivanshkc/llmb/commit/21f5fc7b587d0681bbc667c8b9d26703ca9bf808))
+
+
+### Features
+
+* **core:** add the streams package ([f783e28](https://github.com/shivanshkc/llmb/commit/f783e287dbf94a0d379c66f09f8fd94b452f474e))
+* **core:** chat command respects context expiry ([2f057f8](https://github.com/shivanshkc/llmb/commit/2f057f86fc3a65675ac3bef8506b79f46bf80b11))
+* **core:** streams package is context aware ([b7fbb12](https://github.com/shivanshkc/llmb/commit/b7fbb1242c9197ec9560f316878f32fc1620fa01))
+
 # [1.2.0](https://github.com/shivanshkc/llmb/compare/v1.1.0...v1.2.0) (2025-06-19)
 
 
