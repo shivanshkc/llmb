@@ -25,15 +25,19 @@ func (rc *RetryClient) DoRetry(req *http.Request, maxAttempts int, delay time.Du
 	var errFinal error
 
 	for i := 0; i < maxAttempts; i++ {
+		// Clone the request for each attempt.
+		reqClone := req.Clone(req.Context())
+		reqClone.RequestURI = ""
+
 		// Create a fresh body for this attempt.
 		bodyReader, err := req.GetBody()
 		if err != nil {
 			return nil, fmt.Errorf("error in the GetBody call: %w", err)
 		}
-		req.Body = bodyReader
+		reqClone.Body = bodyReader
 
 		// Attempt the request.
-		response, err := rc.Do(req)
+		response, err := rc.Do(reqClone)
 		if err == nil {
 			// Success! The caller is now responsible for closing the response body.
 			return response, nil
@@ -50,9 +54,9 @@ func (rc *RetryClient) DoRetry(req *http.Request, maxAttempts int, delay time.Du
 		timer := time.NewTimer(delay)
 		// Wait before the next retry while respecting the request's context.
 		select {
-		case <-req.Context().Done():
-			timer.Stop()                    // Cleanup the timer. `time.After` does not allow this optimization.
-			return nil, req.Context().Err() // Return the context's error.
+		case <-reqClone.Context().Done():
+			timer.Stop()                         // Cleanup the timer. `time.After` does not allow this optimization.
+			return nil, reqClone.Context().Err() // Return the context's error.
 		case <-timer.C:
 			// Continue to the next attempt.
 		}
