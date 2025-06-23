@@ -17,32 +17,6 @@ import (
 	"github.com/shivanshkc/llmb/pkg/httpx"
 )
 
-// mockRoundTripper is a mock implementation of http.RoundTripper.
-// It allows us to simulate different network responses (success, failure)
-// for each attempt, without making real network calls.
-type mockRoundTripper struct {
-	// A slice of functions, where each function represents the outcome
-	// of one `Do` attempt.
-	responses []func(*http.Request) (*http.Response, error)
-	// attempt tracks the current call number.
-	attempt int
-}
-
-// RoundTrip satisfies the http.RoundTripper interface. It invokes the response
-// function corresponding to the current attempt number.
-func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Ensure we don't go out of bounds. If we do, it likely means
-	// the retry logic is attempting more calls than we've configured our mock for.
-	if m.attempt >= len(m.responses) {
-		return nil, errors.New("mockRoundTripper: too many attempts")
-	}
-
-	// Get the response function for the current attempt.
-	responseFunc := m.responses[m.attempt]
-	m.attempt++ // Increment for the next call.
-	return responseFunc(req)
-}
-
 // TestRetryClient_DoRetry verifies the core logic of the DoRetry method.
 // It uses a table-driven approach with a mockRoundTripper to simulate
 // various network conditions and client behaviors.
@@ -153,11 +127,10 @@ func TestRetryClient_DoRetry(t *testing.T) {
 			}
 
 			// Setup: Create a request with a rewindable body.
-			req := httptest.NewRequestWithContext(tc.ctx, http.MethodPost, "https://example.com/test", strings.NewReader(requestBody))
+			req := httptest.NewRequestWithContext(tc.ctx, http.MethodPost, "https://abc.com", nil)
 			req.GetBody = func() (io.ReadCloser, error) {
 				return io.NopCloser(bytes.NewReader([]byte(requestBody))), nil
 			}
-			*req = *req.WithContext(tc.ctx)
 
 			// Execution: Call the method under test.
 			resp, err := client.DoRetry(req, tc.maxAttempts, tc.delay)
