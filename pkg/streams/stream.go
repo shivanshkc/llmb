@@ -133,10 +133,10 @@ func (s *Stream[T]) NextContext(ctx context.Context) (T, bool, error) {
 	return s.next(ctx)
 }
 
-// Exhaust blocks until all events are collected from the stream or until the
+// Drain blocks until all events are collected from the stream or until the
 // context is canceled. It provides a simple way to collect all results into a
 // slice.
-func (s *Stream[T]) Exhaust(ctx context.Context) ([]T, error) {
+func (s *Stream[T]) Drain(ctx context.Context) ([]T, error) {
 	// Pre-allocate with a reasonable capacity to reduce re-allocations.
 	items := make([]T, 0, 100)
 

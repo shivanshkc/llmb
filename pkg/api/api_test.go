@@ -149,8 +149,8 @@ data: {"choices":` // Malformed JSON
 			require.NotNil(t, stream)
 
 			// Execution & Assertion for the stream's content.
-			events, exhaustErr := stream.Exhaust(context.Background())
-			assert.NoError(t, exhaustErr, "Draining the stream should not cause a primary error")
+			events, errDrain := stream.Drain(context.Background())
+			assert.NoError(t, errDrain, "Draining the stream should not cause a primary error")
 
 			// Collect deltas and check for processing errors within the events.
 			var deltas []string

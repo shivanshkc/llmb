@@ -134,9 +134,9 @@ func TestStream_NextContext(t *testing.T) {
 	}
 }
 
-// TestStream_Exhaust verifies the behavior of the convenience Exhaust method.
-func TestStream_Exhaust(t *testing.T) {
-	t.Run("Successful Exhaust", func(t *testing.T) {
+// TestStream_Drain verifies the behavior of the convenience Drain method.
+func TestStream_Drain(t *testing.T) {
+	t.Run("Successful Drain", func(t *testing.T) {
 		// Setup.
 		ch := make(chan int, 2)
 		ch <- 100
@@ -145,14 +145,14 @@ func TestStream_Exhaust(t *testing.T) {
 		stream := streams.New(ch)
 
 		// Execution.
-		items, err := stream.Exhaust(context.Background())
+		items, err := stream.Drain(context.Background())
 
 		// Assertion.
 		assert.NoError(t, err)
 		assert.Equal(t, []int{100, 200}, items)
 	})
 
-	t.Run("Exhaust with Context Cancellation", func(t *testing.T) {
+	t.Run("Drain with Context Cancellation", func(t *testing.T) {
 		// Setup.
 		blockingChan := make(chan int) // This channel will block.
 		stream := streams.New(blockingChan)
@@ -161,7 +161,7 @@ func TestStream_Exhaust(t *testing.T) {
 		defer cancel()
 
 		// Execution.
-		items, err := stream.Exhaust(ctx)
+		items, err := stream.Drain(ctx)
 
 		// Assertion.
 		assert.Nil(t, items, "Items should be nil on error.")

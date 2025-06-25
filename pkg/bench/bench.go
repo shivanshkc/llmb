@@ -124,9 +124,9 @@ func runOneStream(ctx context.Context, funk StreamFunc) (timings, error) {
 	}
 
 	// Collect all events.
-	events, err := eventStream.Exhaust(ctx)
+	events, err := eventStream.Drain(ctx)
 	if err != nil {
-		return timings{}, fmt.Errorf("failed to exhaust stream: %w", err)
+		return timings{}, fmt.Errorf("failed to drain stream: %w", err)
 	}
 
 	// Time at which stream ended.
