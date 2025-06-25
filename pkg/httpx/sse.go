@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,13 +30,21 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 	// which signals the context watcher goroutine to exit.
 	producerCtx, cancel := context.WithCancel(ctx)
 
+	// Use sync.Once to ensure the body is closed exactly once.
+	// This is required because an io.ReadCloser implementation may not be safe for concurrent closing,
+	// and we need to attempt closure from two goroutines.
+	var closeOnce sync.Once
+	closeBodyFunc := func() {
+		closeOnce.Do(func() { _ = body.Close() })
+	}
+
 	// This goroutine listens for the parent context's cancellation
 	// and closes the body to unblock the reader in the following goroutine.
 	go func() {
 		// Producer finished or parent context was canceled.
 		<-producerCtx.Done()
 		// Force the reader to unblock.
-		_ = body.Close()
+		closeBodyFunc()
 	}()
 
 	// The producer goroutine.
@@ -45,7 +54,7 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 		// This line guarantees that by the time eventChan closes, the body is closed.
 		// The context-watcher goroutine above closes the body too, but it can't produce this guarantee.
 		// Note that the context-watcher goroutine is still required for correct functioning.
-		defer func() { _ = body.Close() }()
+		defer closeBodyFunc()
 		defer cancel() // Signal all related goroutines to clean up.
 
 		// For reading events from the body stream.
@@ -56,26 +65,37 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 			timestamp := time.Now() // Capture timestamp immediately after read.
 
 			if err != nil {
-				// If the error is due to context cancellation, report the context error.
+				// If the error is due to context cancellation, report it.
 				if ctx.Err() != nil {
-					err = ctx.Err()
+					eventChan <- ServerSentEvent{Index: index, Error: ctx.Err(), Timestamp: timestamp}
+					return
 				}
-				// Send the final error and exit.
+
+				// If the error is not EOF, report it.
 				if !errors.Is(err, io.EOF) { // Don't send EOF as a discrete error event.
 					eventChan <- ServerSentEvent{Index: index, Error: err, Timestamp: timestamp}
+					return
 				}
-				return
+
+				// The error is EOF. Since the line may contain data, let the switch-case handle it.
 			}
 
 			switch value := sanitizeSSE(line); value {
 			case "":
-				// SSE spec says to ignore empty lines.
-				continue
+				// Continue only if there was no EOF.
+				if err == nil {
+					continue
+				}
 			case "[DONE]":
 				// Stream signaled completion.
 				return
 			default:
 				eventChan <- ServerSentEvent{Index: index, Value: value, Timestamp: timestamp}
+			}
+
+			// If there was an error (which can only be EOF here), end processing.
+			if err != nil {
+				return
 			}
 		}
 	}()
