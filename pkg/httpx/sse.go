@@ -30,7 +30,7 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 	producerCtx, cancel := context.WithCancel(ctx)
 
 	// This goroutine listens for the parent context's cancellation
-	// and closes the body to unblock the reader.
+	// and closes the body to unblock the reader in the following goroutine.
 	go func() {
 		// Producer finished or parent context was canceled.
 		<-producerCtx.Done()
@@ -42,7 +42,11 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 	// It starts a loop to read events and produces them to the returned channel.
 	go func() {
 		defer close(eventChan) // Close the returned channel once producer is done.
-		defer cancel()         // Signal all related goroutines to clean up.
+		// This line guarantees that by the time eventChan closes, the body is closed.
+		// The context-watcher goroutine above closes the body too, but it can't produce this guarantee.
+		// Note that the context-watcher goroutine is still required for correct functioning.
+		defer func() { _ = body.Close() }()
+		defer cancel() // Signal all related goroutines to clean up.
 
 		// For reading events from the body stream.
 		reader := bufio.NewReader(body)
