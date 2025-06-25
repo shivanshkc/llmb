@@ -1,3 +1,11 @@
+## [1.3.1](https://github.com/shivanshkc/llmb/compare/v1.3.0...v1.3.1) (2025-06-25)
+
+
+### Bug Fixes
+
+* **cli:** do not consider user message if API fails ([9c8f336](https://github.com/shivanshkc/llmb/commit/9c8f336a07c871564b28e4e8380df61b0b8c6d13))
+* **cli:** do not show context canellation errors ([8866516](https://github.com/shivanshkc/llmb/commit/886651698e872d32d1ded22c9765145f7eb49e9f))
+
 # [1.3.0](https://github.com/shivanshkc/llmb/compare/v1.2.0...v1.3.0) (2025-06-22)
 
 
