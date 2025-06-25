@@ -35,7 +35,7 @@ var benchCmd = &cobra.Command{
 	Short:   "Benchmark an Open AI compatible REST API.",
 	Long:    "Concurrently executes requests against a streaming API and reports performance metrics.",
 	PreRunE: func(cmd *cobra.Command, args []string) error { return validateBenchFlags() },
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		client := api.NewClient(rootBaseURL)
 
 		// streamFunc is the core function to be benchmarked. It's a factory that
@@ -58,14 +58,15 @@ var benchCmd = &cobra.Command{
 		// Delegate all concurrent execution and aggregation to the benchmark package.
 		results, err := bench.BenchmarkStream(cmd.Context(), benchRequestCount, benchConcurrency, streamFunc)
 		if err != nil {
-			// Log only if the error is unexpected.
-			if !errors.Is(err, context.Canceled) {
-				fmt.Println("Error during benchmarking:", err)
+			// Ignore context cancellation errors.
+			if errors.Is(err, context.Canceled) {
+				return nil
 			}
-			os.Exit(1)
+			return fmt.Errorf("failed to benchmark: %w", err)
 		}
 
 		displayBenchmarkResults(results)
+		return nil
 	},
 }
 

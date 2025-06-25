@@ -25,7 +25,7 @@ var chatCmd = &cobra.Command{
 	Short:   "Start an interactive chat with the LLM.",
 	Long:    "Starts an interactive chat session with the specified language model, maintaining conversation history.",
 	PreRunE: func(cmd *cobra.Command, args []string) error { return validateChatFlags() },
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// chatMessages holds the full conversation history for the current session.
 		var chatMessages []api.ChatMessage
 		client := api.NewClient(rootBaseURL)
@@ -39,11 +39,11 @@ var chatCmd = &cobra.Command{
 			// return an error if the command's context is canceled (e.g., by Ctrl+C).
 			input, err := readStringContext(cmd.Context(), reader)
 			if err != nil {
-				// Don't show context cancellation errors.
-				if !errors.Is(err, context.Canceled) {
-					fmt.Println("Failed to read input:", err)
+				// Ignore context cancellation errors.
+				if errors.Is(err, context.Canceled) {
+					return nil
 				}
-				return // Exit the command's Run function gracefully.
+				return fmt.Errorf("failed to read input: %w", err)
 			}
 
 			// Parse the raw input into a role and message content.
@@ -58,10 +58,13 @@ var chatCmd = &cobra.Command{
 			// Begin the streaming API call.
 			eventStream, err := client.ChatCompletionStream(cmd.Context(), rootModel, chatMessages)
 			if err != nil {
-				// Don't show context cancellation errors.
-				if !errors.Is(err, context.Canceled) {
-					fmt.Println("Error streaming response:", err)
+				// End if the context was canceled, otherwise log the error and continue chat.
+				if errors.Is(err, context.Canceled) {
+					return nil
 				}
+				fmt.Println("Failed to stream response:", err)
+				// Don't consider this message since the call failed.
+				chatMessages = chatMessages[:len(chatMessages)-1]
 				continue
 			}
 
@@ -70,8 +73,13 @@ var chatCmd = &cobra.Command{
 			var answer string
 			for {
 				event, ok, err := eventStream.NextContext(cmd.Context())
-				if err != nil || !ok {
-					break // Context canceled, stream finished, or an error occurred.
+				if err != nil {
+					return nil // Context canceled.
+				}
+
+				// Stream ended.
+				if !ok {
+					break
 				}
 
 				if len(event.Choices) > 0 {
