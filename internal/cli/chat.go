@@ -39,8 +39,7 @@ var chatCmd = &cobra.Command{
 			// return an error if the command's context is canceled (e.g., by Ctrl+C).
 			input, err := readStringContext(cmd.Context(), reader)
 			if err != nil {
-				// If the error is from context cancellation, we exit silently.
-				// Otherwise, it might be a different I/O error we should report.
+				// Don't show context cancellation errors.
 				if !errors.Is(err, context.Canceled) {
 					fmt.Println("Failed to read input:", err)
 				}
@@ -59,7 +58,10 @@ var chatCmd = &cobra.Command{
 			// Begin the streaming API call.
 			eventStream, err := client.ChatCompletionStream(cmd.Context(), rootModel, chatMessages)
 			if err != nil {
-				fmt.Println("Error streaming response:", err)
+				// Don't show context cancellation errors.
+				if !errors.Is(err, context.Canceled) {
+					fmt.Println("Error streaming response:", err)
+				}
 				continue
 			}
 

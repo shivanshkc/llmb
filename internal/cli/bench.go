@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -57,7 +58,10 @@ var benchCmd = &cobra.Command{
 		// Delegate all concurrent execution and aggregation to the benchmark package.
 		results, err := bench.BenchmarkStream(cmd.Context(), benchRequestCount, benchConcurrency, streamFunc)
 		if err != nil {
-			fmt.Println("Error during benchmarking:", err)
+			// Log only if the error is unexpected.
+			if !errors.Is(err, context.Canceled) {
+				fmt.Println("Error during benchmarking:", err)
+			}
 			os.Exit(1)
 		}
 
