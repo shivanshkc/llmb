@@ -60,6 +60,25 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 		// For reading events from the body stream.
 		reader := bufio.NewReader(body)
 
+		// produceEvent attempts to deliver the given event with the following behavior:
+		// 1) Try a non-blocking send first. If it succeeds, return immediately.
+		// 2) Otherwise, block until either the send succeeds or the context is cancelled.
+		produceEvent := func(evt ServerSentEvent) {
+			// Fast path: if the channel is immediately ready, send without blocking.
+			// This avoids select overhead for the common case (buffer has space).
+			select {
+			case eventChan <- evt:
+				return
+			default:
+			}
+
+			// Block only until either send succeeds or context is done.
+			select {
+			case eventChan <- evt:
+			case <-producerCtx.Done():
+			}
+		}
+
 		for index := 0; ; index++ {
 			line, err := reader.ReadString('\n')
 			timestamp := time.Now() // Capture timestamp immediately after read.
@@ -67,13 +86,13 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 			if err != nil {
 				// If the error is due to context cancellation, report it.
 				if ctx.Err() != nil {
-					eventChan <- ServerSentEvent{Index: index, Error: ctx.Err(), Timestamp: timestamp}
+					produceEvent(ServerSentEvent{Index: index, Error: ctx.Err(), Timestamp: timestamp})
 					return
 				}
 
 				// If the error is not EOF, report it.
 				if !errors.Is(err, io.EOF) { // Don't send EOF as a discrete error event.
-					eventChan <- ServerSentEvent{Index: index, Error: err, Timestamp: timestamp}
+					produceEvent(ServerSentEvent{Index: index, Error: err, Timestamp: timestamp})
 					return
 				}
 
@@ -90,7 +109,7 @@ func ReadServerSentEvents(ctx context.Context, body io.ReadCloser) <-chan Server
 				// Stream signaled completion.
 				return
 			default:
-				eventChan <- ServerSentEvent{Index: index, Value: value, Timestamp: timestamp}
+				produceEvent(ServerSentEvent{Index: index, Value: value, Timestamp: timestamp})
 			}
 
 			// If there was an error (which can only be EOF here), end processing.
