@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/shivanshkc/llmb/compare/v1.3.1...v1.3.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **sse:** context-aware event production ([2f9e945](https://github.com/shivanshkc/llmb/commit/2f9e94595d9ee953c8c623179796862e878fa8e3))
+
 ## [1.3.1](https://github.com/shivanshkc/llmb/compare/v1.3.0...v1.3.1) (2025-06-25)
 
 
